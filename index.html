@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wavy-Wizards — Arena Survival</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="game-wrap">
+  <canvas id="game" width="1280" height="720"></canvas>
+  <div id="tooltip"></div>
+
+  <!-- Title screen -->
+  <div id="title" class="overlay visible">
+    <h1>WAVY-WIZARDS</h1>
+    <p class="subtitle">Survive 20 waves. Buy spells, not weapons.</p>
+    <div class="controls-hint">
+      <span><b>WASD / Arrows</b> move</span>
+      <span><b>1–6</b> cast spell</span>
+      <span><b>Shift+1–6</b> toggle auto-cast</span>
+      <span><b>Tab</b> damage meter</span>
+      <span><b>P</b> pause &amp; keybinds</span>
+      <span><b>M</b> mute</span>
+      <span><b>🎮</b> controller supported</span>
+    </div>
+    <p class="subtitle zone-hint">Dashed red <b>⚠</b> zones hurt you — solid rings are your own magic.</p>
+    <button id="btn-coop" class="small-btn">👥 Players: 1 (Solo)</button>
+    <p id="coop-hint" class="subtitle zone-hint" style="display:none">Co-op: <b>P1</b> moves with <b>WASD</b>, <b>P2</b> with <b>Arrow keys</b> (or two gamepads). Shared spellbook &amp; gold.</p>
+    <button id="btn-start" class="big-btn">Start Run</button>
+    <button id="btn-resume" class="big-btn resume" style="display:none"></button>
+    <button id="btn-settings" class="small-btn">⚙ Settings</button>
+    <div id="scoreboard" class="panel" style="display:none"></div>
+  </div>
+
+  <!-- Settings / accessibility -->
+  <div id="settings" class="overlay">
+    <h2>SETTINGS</h2>
+    <div id="settings-list" class="panel"></div>
+    <button id="btn-settings-back" class="big-btn">Back</button>
+  </div>
+
+  <!-- Character select -->
+  <div id="charselect" class="overlay">
+    <h2>CHOOSE YOUR WIZARD</h2>
+    <div id="char-avatars"></div>
+    <div id="char-detail" class="panel"></div>
+    <button id="btn-char-start" class="big-btn">Start →</button>
+  </div>
+
+  <!-- Starter spell select -->
+  <div id="spellselect" class="overlay">
+    <h2>CHOOSE YOUR STARTING SPELL</h2>
+    <p class="subtitle">Free, at Tier I. The rest you'll buy with blood and gold.</p>
+    <div id="danger-select"></div>
+    <div id="start-options"></div>
+    <div id="spell-cards" class="card-row wide"></div>
+  </div>
+
+  <!-- Level up screen -->
+  <div id="levelup" class="overlay">
+    <h2>LEVEL UP!</h2>
+    <p id="levelup-count" class="subtitle"></p>
+    <div id="levelup-choices" class="card-row"></div>
+  </div>
+
+  <!-- Spell mastery screen -->
+  <div id="mastery" class="overlay">
+    <h2 class="gold">SPELL MASTERY</h2>
+    <p id="mastery-sub" class="subtitle"></p>
+    <div id="mastery-choices" class="card-row"></div>
+  </div>
+
+  <!-- Shop screen -->
+  <div id="shop" class="overlay">
+    <h2 id="shop-title">SHOP</h2>
+    <div id="shop-overview" class="wave-overview"></div>
+    <div id="shop-layout">
+      <div id="shop-stats" class="panel"></div>
+      <div id="shop-main">
+        <div id="shop-gold"></div>
+        <div id="shop-offers" class="card-row"></div>
+        <div class="shop-buttons">
+          <button id="btn-reroll" class="small-btn"></button>
+          <button id="btn-next-wave" class="big-btn">Start Next Wave</button>
+        </div>
+      </div>
+      <div id="shop-owned" class="panel"></div>
+    </div>
+    <div id="shop-meter" class="panel"></div>
+    <div id="shop-summary" class="panel"></div>
+  </div>
+
+  <!-- Pause -->
+  <div id="pause" class="overlay">
+    <h2>PAUSED</h2>
+    <p class="subtitle">Press P or Esc to resume</p>
+    <div id="pause-overview" class="wave-overview"></div>
+    <div id="keybinds" class="panel"></div>
+    <p class="subtitle small-hint">Click a key to rebind it. In game: hotkey casts the spell, <b>Shift+hotkey</b> toggles auto-cast, <b>Tab</b> toggles the damage meter.</p>
+    <button id="btn-pause-settings" class="small-btn">⚙ Settings</button>
+  </div>
+
+  <!-- Game over -->
+  <div id="gameover" class="overlay">
+    <h2 class="red">YOU DIED</h2>
+    <p id="gameover-stats" class="subtitle"></p>
+    <div id="gameover-summary" class="run-summary"></div>
+    <div id="gameover-board" class="sb-wrap"></div>
+    <div class="win-buttons">
+      <button id="btn-retry" class="big-btn">Try Again</button>
+      <button id="btn-share-death" class="small-btn">📸 Share Card</button>
+    </div>
+  </div>
+
+  <!-- Win -->
+  <div id="win" class="overlay">
+    <div id="win-rays"></div>
+    <h2 class="gold win-title">★ VICTORY ★</h2>
+    <p id="win-stats" class="subtitle"></p>
+    <div id="win-summary" class="run-summary win"></div>
+    <div id="win-board" class="sb-wrap"></div>
+    <div class="win-buttons">
+      <button id="btn-continue" class="big-btn">Continue — Endless Mode</button>
+      <button id="btn-again" class="big-btn">New Run</button>
+      <button id="btn-share-win" class="small-btn">📸 Share Card</button>
+    </div>
+  </div>
+</div>
+
+<!-- audio + data load before the engine (main.js uses them at startup) -->
+<script src="js/audio.js"></script>
+<script src="js/data/spells.js"></script>
+<script src="js/data/characters.js"></script>
+<script src="js/data/items.js"></script>
+<script src="js/data/enemies.js"></script>
+<script src="js/data/world.js"></script>
+<script src="js/main.js"></script>
+<!-- systems & renderers called at runtime by the game loop -->
+<script src="js/enemies-ai.js"></script>
+<script src="js/shop.js"></script>
+<script src="js/render/shades.js"></script>
+<script src="js/render/wizard.js"></script>
+<script src="js/render/environment.js"></script>
+</body>
+</html>
