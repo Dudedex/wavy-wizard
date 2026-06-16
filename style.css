@@ -29,13 +29,20 @@ canvas#game {
   position: absolute; inset: 0;
   display: none;
   flex-direction: column;
-  align-items: center; justify-content: center;
+  align-items: center;
+  /* "safe center" keeps content centred when it fits, but falls back to top-
+     aligned (instead of clipping the top) when it's taller than the viewport,
+     so the danger selector & options at the top stay reachable + scrollable. */
+  justify-content: safe center;
+  overflow-y: auto;
   gap: 18px;
+  padding: 20px 0;
   background: rgba(8, 10, 20, 0.86);
   backdrop-filter: blur(3px);
   text-align: center;
   z-index: 10;
 }
+.overlay > * { flex-shrink: 0; }
 .overlay.visible { display: flex; }
 
 h1 {
@@ -456,7 +463,17 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 /* ---------- wave overview / roadmap ---------- */
 .wave-overview { width: 94%; max-width: 1100px; }
 .wo-head { font-size: 13px; color: #9fb0c8; margin-bottom: 6px; text-align: center; }
-.wo-strip { display: flex; gap: 5px; overflow-x: auto; padding: 4px 2px; justify-content: flex-start; }
+.wo-row { display: flex; align-items: stretch; gap: 8px; justify-content: center; }
+.wo-strip { display: flex; gap: 5px; padding: 4px 2px; justify-content: center; }
+.wo-arrow {
+  flex: 0 0 auto;
+  background: #11182a; color: #8be0ff;
+  border: 1px solid #2a3a58; border-radius: 7px;
+  font-size: 16px; font-weight: 700;
+  padding: 0 12px; cursor: pointer;
+}
+.wo-arrow:hover:not(:disabled) { border-color: #5fb4ff; color: #cfe2ff; }
+.wo-arrow:disabled { opacity: 0.28; cursor: default; }
 .wo-chip {
   flex: 0 0 auto;
   display: flex; flex-direction: column; align-items: center; gap: 1px;
@@ -469,6 +486,7 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 .wo-chip .wo-n { font-size: 11px; font-weight: 700; color: #cfe2ff; }
 .wo-chip .wo-i { font-size: 14px; line-height: 1; }
 .wo-chip .wo-l { font-size: 8.5px; color: var(--wc); text-transform: uppercase; letter-spacing: 0.5px; }
+.wo-chip .wo-realm { font-size: 12px; line-height: 1; margin-top: 1px; }
 .wo-chip.done { opacity: 0.32; }
 .wo-chip.current {
   opacity: 1;

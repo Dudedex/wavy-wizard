@@ -32,7 +32,7 @@ const THEMES = [
 // +2 to that element's meta stack. Keyed by element id.
 const ELEMENT_THEMES = {
   fire:  { id: 'fire',  name: 'Fire Realm',  icon: '🔥', bg: '#1a0c08', grid: 'rgba(255,120,60,0.10)',  wall: '#7a3a22' },
-  ice:   { id: 'ice',   name: 'Frozen Realm',icon: '❄️', bg: '#aec6da', grid: 'rgba(120,160,200,0.18)', wall: '#5a7da0' },
+  ice:   { id: 'ice',   name: 'Frozen Realm',icon: '❄️', bg: '#8a96a2', grid: 'rgba(70,95,120,0.20)', wall: '#566472' },
   earth: { id: 'earth', name: 'Earthen Realm',icon: '⛰️', bg: '#2a2113', grid: 'rgba(190,160,90,0.12)',  wall: '#6a5630' },
   wind:  { id: 'wind',  name: 'Windswept Realm',icon: '🌀', bg: '#0a1414', grid: 'rgba(120,230,210,0.10)', wall: '#2a6a60' },
 };

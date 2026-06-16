@@ -6,8 +6,16 @@
 
 // Shop
 // ---------------------------------------------------------------------------
+// Rough ceiling of gold a player can earn in a given wave. Anchored to the
+// user's spec: ~40g on wave 1, ~1000g on wave 8 (≈ ×1.585 per wave).
+function maxEarnableGold(w) {
+  return 40 * Math.pow(1.585, Math.max(0, w - 1));
+}
+
+// Item prices climb with the economy: base price + 10% of the wave's gold ceiling.
+// (e.g. a 15g item costs 19g on wave 1 and ~115g on wave 8.)
 function itemPrice(item) {
-  return Math.round(item.price * (1 + (game.wave - 1) * 0.10)); // +10% per round
+  return Math.round(item.price + 0.10 * maxEarnableGold(game.wave));
 }
 
 function spellTierWeightForWave(wave) {
@@ -481,24 +489,49 @@ function waveInfo(w) {
   return { icon: '•', label: 'Normal', color: '#7e8ca3' };
 }
 
-// Wave roadmap shown at the top of the shop and in the pause menu.
+// Wave roadmap — a small paginated window (1 previous + current + next 3) you can
+// scroll through with the ◀ ▶ arrows. Offset is kept while you page, and resets
+// whenever a new shop/pause opens (i.e. when the "current wave" changes).
+const WO_WINDOW = 5; // chips visible at once
+let woOffset = 0, woLastCurrent = null;
+
 function renderWaveOverview(elId, currentW) {
   const el = document.getElementById(elId);
   if (!el) return;
   const maxW = Math.max(20, game.wave + 3);
+  if (currentW !== woLastCurrent) { woOffset = 0; woLastCurrent = currentW; } // fresh open → recenter
+  const base = currentW - 1;                       // one wave before the current
+  const lastStart = Math.max(1, maxW - WO_WINDOW + 1);
+  let start = Math.min(Math.max(base + woOffset, 1), lastStart);
+  woOffset = start - base;                          // normalise so arrow stepping stays smooth
+  const end = Math.min(maxW, start + WO_WINDOW - 1);
+
   let chips = '';
-  for (let w = 1; w <= maxW; w++) {
+  for (let w = start; w <= end; w++) {
     const info = waveInfo(w);
     let cls = 'wo-chip';
     if (w < currentW) cls += ' done';
     else if (w === currentW) cls += ' current';
-    chips += `<div class="${cls}" style="--wc:${info.color}" title="Wave ${w} — ${info.label}">
-      <span class="wo-n">${w}</span><span class="wo-i">${info.icon}</span><span class="wo-l">${info.label}</span></div>`;
+    // the realm this wave will be fought in (decided at run start)
+    const rid = game.realmSchedule && game.realmSchedule[w];
+    const rt = rid && ELEMENT_THEMES[rid];
+    const realmPip = rt ? `<span class="wo-realm" style="color:${rt.wall}" title="${rt.name}">${rt.icon}</span>` : '';
+    const realmName = rt ? ` · ${rt.name}` : '';
+    chips += `<div class="${cls}" style="--wc:${info.color}" title="Wave ${w} — ${info.label}${realmName}">
+      <span class="wo-n">${w}</span><span class="wo-i">${info.icon}</span><span class="wo-l">${info.label}</span>${realmPip}</div>`;
   }
   const realm = game.mapElement ? `${ELEMENT_THEMES[game.mapElement].icon} ${ELEMENT_THEMES[game.mapElement].name}` : 'Endless — no realm';
   const dgr = game.danger > 0 ? ` · ☠ +${Math.round(game.danger * 100)}%` : '';
   const mod = game.modifier ? ` · ${game.modifier.icon} ${game.modifier.name}` : '';
-  el.innerHTML = `<div class="wo-head">Wave ${game.wave}${game.endless ? ' (Endless)' : ' / 20'} · ${realm}${dgr}${mod}</div><div class="wo-strip">${chips}</div>`;
+  el.innerHTML = `<div class="wo-head">Wave ${game.wave}${game.endless ? ' (Endless)' : ' / 20'} · ${realm}${dgr}${mod}</div>
+    <div class="wo-row">
+      <button class="wo-arrow" data-dir="-1" ${start <= 1 ? 'disabled' : ''} title="Earlier waves">◀</button>
+      <div class="wo-strip">${chips}</div>
+      <button class="wo-arrow" data-dir="1" ${end >= maxW ? 'disabled' : ''} title="Later waves">▶</button>
+    </div>`;
+  el.querySelectorAll('.wo-arrow').forEach(b => {
+    b.onclick = () => { woOffset += (+b.dataset.dir); renderWaveOverview(elId, currentW); };
+  });
 }
 
 // Build archetypes: recognisable strategies, scored from owned spells/items/enchants

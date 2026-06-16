@@ -274,7 +274,8 @@ const game = {
   hazardT: 0, // arcane storm timer
   worldEvent: null, worldZones: [], worldEventAt: 0, worldEventPick: null,
   worldTickT: 0, worldSpawnT: 0,
-  mapElement: null, // element realm theme for waves 1-20
+  mapElement: null, // element realm theme for the current wave (waves 1-20)
+  realmSchedule: {}, // wave → element realm, decided at run start so the roadmap can show it
   cones: [], tornadoes: [], // breath-spell visuals & wind tornadoes
   structures: [], structIce: 0, // element landmarks + active ice-slow bonus
   worldSpawns: [], // gold magnet + item mine
@@ -309,7 +310,7 @@ function recomputeElements() {
 
 // Spell mastery: a spell levels up (max 5) by scoring kills — shared across every
 // copy of that spell id. These are the cumulative kills needed for levels 1–5.
-const MASTERY_THRESHOLDS = [12, 30, 55, 88, 130];
+const MASTERY_THRESHOLDS = [18, 45, 83, 132, 195]; // +50% kills to level a spell's mastery
 const MASTERY_OPTIONS = [
   { name: 'Empower',  icon: '💪', desc: '+18% damage with this spell', apply: m => m.dmgMult *= 1.18 },
   { name: 'Hasten',   icon: '⏩', desc: '-12% cooldown / +12% rate',   apply: m => { m.cdMult *= 0.88; m.dmgMult *= 1.04; } },
@@ -1687,9 +1688,10 @@ function startWave(n) {
   game.dangerEliteDone = false;
   game.castCount = 0;
 
-  // pick a random element realm for waves 1-20 (background + +2 meta to it);
-  // endless waves drop back to the player's chosen colour scheme.
-  game.mapElement = n <= 20 ? pick(['fire', 'ice', 'earth', 'wind']) : null;
+  // the element realm for each wave is decided up-front (see realmSchedule, built
+  // in beginRun) so the roadmap can reveal it in advance; endless waves drop back
+  // to the player's chosen colour scheme.
+  game.mapElement = n <= 20 ? (game.realmSchedule[n] || pick(['fire', 'ice', 'earth', 'wind'])) : null;
   // scatter 5 element landmarks that give a small bonus when you stand near them;
   // keep them clear of the spawn point and spaced apart so they never overlap.
   if (game.mapElement) {
@@ -2006,6 +2008,7 @@ function saveRun() {
     totalDmg: game.totalDmg || 0, runTime: game.runTime || 0,
     runDmg: game.runDmg || {}, goldEarned: game.goldEarned || 0, bestWave: game.bestWave || { wave: 0, dps: 0 },
     debtHpMult: game.debtHpMult || 1, debtSpdMult: game.debtSpdMult || 1, discountBuys: game.discountBuys || 0, arcaneLoan: !!game.arcaneLoan,
+    realmSchedule: game.realmSchedule || {},
     charId: p.charId, hp: p.hp,
     stats: p.stats,
     spells: p.spells.map(s => ({ id: s.id, tier: s.tier, auto: s.auto !== false, enchant: s.enchant || null, variant: s.variant || null, fuseBonus: s.fuseBonus || 0 })),
@@ -2055,6 +2058,7 @@ function resumeRun() {
   game.totalDmg = d.totalDmg || 0; game.runTime = d.runTime || 0;
   game.runDmg = d.runDmg || {}; game.goldEarned = d.goldEarned || 0; game.bestWave = d.bestWave || { wave: 0, dps: 0 };
   game.debtHpMult = d.debtHpMult || 1; game.debtSpdMult = d.debtSpdMult || 1; game.discountBuys = d.discountBuys || 0; game.arcaneLoan = !!d.arcaneLoan;
+  game.realmSchedule = d.realmSchedule && Object.keys(d.realmSchedule).length ? d.realmSchedule : (() => { const s = {}; for (let w = 1; w <= 20; w++) s[w] = pick(['fire', 'ice', 'earth', 'wind']); return s; })();
   game.wave = d.wave;
   game.endless = !!d.endless || d.wave >= 20;
   game.danger = d.danger || 0;
@@ -2388,6 +2392,9 @@ function beginRun(starterSpell) {
   game.endless = false;
   game.danger = DANGER_LEVELS[dangerLevel].mod;
   game.masteryAcc = {}; game.masteryLvl = {}; game.masteryMods = {}; game.pendingMastery = [];
+  // decide each wave's element realm up-front so the roadmap reveals it in advance
+  game.realmSchedule = {};
+  for (let w = 1; w <= 20; w++) game.realmSchedule[w] = pick(['fire', 'ice', 'earth', 'wind']);
   game.player.inputId = game.coop ? 'wasd' : 'both';
   game.p2 = game.coop ? makePlayer2() : null;
   clearSave(); // a fresh run replaces any old checkpoint
