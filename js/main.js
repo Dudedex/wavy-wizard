@@ -2701,6 +2701,49 @@ function drawDownedBody(p) {
   ctx.fillText('💀 DOWN', p.x, p.y - 40);
 }
 
+
+function drawSpellProjectileAsset(g, pr, time) {
+  const tf = pr.tierFx || 0;
+  const speed = Math.max(1, Math.hypot(pr.vx || 0, pr.vy || 0));
+  const ang = Math.atan2(pr.vy || 0, pr.vx || 1);
+  const pulse = 0.5 + Math.sin(time * 10 + pr.x * 0.01) * 0.5;
+  g.save();
+  g.translate(pr.x, pr.y);
+  g.rotate(ang);
+  const tail = Math.min(42, speed * 0.055 + pr.r * 2.5);
+  const grad = g.createLinearGradient(-tail, 0, pr.r, 0);
+  grad.addColorStop(0, pr.color + '00');
+  grad.addColorStop(0.55, pr.color + '66');
+  grad.addColorStop(1, pr.color + 'dd');
+  g.globalCompositeOperation = 'lighter';
+  g.fillStyle = grad;
+  g.beginPath();
+  g.ellipse(-tail * 0.35, 0, tail * 0.65, pr.r * (pr.kind === 'frost' ? 0.45 : 0.75), 0, 0, Math.PI * 2);
+  g.fill();
+  if (pr.kind === 'frost') {
+    g.strokeStyle = 'rgba(230,250,255,0.85)'; g.lineWidth = 1.4;
+    g.beginPath(); g.moveTo(-pr.r * 1.6, 0); g.lineTo(pr.r * 1.4, 0); g.moveTo(0, -pr.r); g.lineTo(pr.r * 1.3, 0); g.lineTo(0, pr.r); g.stroke();
+  } else if (pr.kind === 'fireball') {
+    g.fillStyle = 'rgba(255,225,110,0.45)';
+    g.beginPath(); g.arc(-pr.r * 0.25, 0, pr.r * (0.55 + pulse * 0.25), 0, Math.PI * 2); g.fill();
+  } else {
+    g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 1.2;
+    g.beginPath(); g.arc(0, 0, pr.r * (1.2 + pulse * 0.25), 0, Math.PI * 2); g.stroke();
+  }
+  if (tf >= 3) {
+    g.strokeStyle = 'rgba(255,212,84,0.9)'; g.lineWidth = 2;
+    g.beginPath(); g.arc(0, 0, pr.r + 4 + pulse * 2, 0, Math.PI * 2); g.stroke();
+  }
+  g.fillStyle = pr.color;
+  g.shadowColor = pr.color; g.shadowBlur = tf >= 2 ? 18 : 10;
+  g.beginPath(); g.arc(0, 0, pr.r + (tf >= 2 ? 1.5 : 0), 0, Math.PI * 2); g.fill();
+  if (tf >= 2) {
+    g.fillStyle = 'rgba(255,255,255,0.85)';
+    g.beginPath(); g.arc(-pr.r * 0.25, -pr.r * 0.25, pr.r * 0.45, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+
 function render() {
   ctx.save();
   ctx.clearRect(0, 0, W, H);
@@ -3039,24 +3082,9 @@ function render() {
     ctx.shadowBlur = 0; ctx.globalAlpha = 1;
   }
 
-  // projectiles — Tier III+ casts glow brighter; Tier IV adds a golden halo
-  for (const pr of game.projectiles) {
-    const tf = pr.tierFx || 0;
-    if (tf >= 3) { // perfected: outer golden ring
-      ctx.strokeStyle = 'rgba(255,212,84,0.9)'; ctx.lineWidth = 2;
-      ctx.shadowColor = '#ffd454'; ctx.shadowBlur = 16;
-      ctx.beginPath(); ctx.arc(pr.x, pr.y, pr.r + 4, 0, Math.PI * 2); ctx.stroke();
-      ctx.shadowBlur = 0;
-    }
-    ctx.fillStyle = pr.color;
-    ctx.shadowColor = pr.color; ctx.shadowBlur = tf >= 2 ? 18 : 10;
-    ctx.beginPath(); ctx.arc(pr.x, pr.y, pr.r + (tf >= 2 ? 1.5 : 0), 0, Math.PI * 2); ctx.fill();
-    if (tf >= 2) { // bright core
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.beginPath(); ctx.arc(pr.x, pr.y, pr.r * 0.45, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-  }
+  // player spell projectiles — animated spell assets with tails, cores, and tier halos
+  const spellNow = performance.now() / 1000;
+  for (const pr of game.projectiles) drawSpellProjectileAsset(ctx, pr, spellNow);
   for (const pr of game.enemyProjectiles) {
     const hc = game.opt.hiContrast;
     const rr = hc ? pr.r + 2 : pr.r;

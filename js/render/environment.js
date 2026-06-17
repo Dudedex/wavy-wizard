@@ -83,6 +83,35 @@ function drawRealmDecor(th) {
   ctx.restore();
 }
 
+
+function drawRealmDepth(th, now) {
+  const aw = W - WALL * 2, ah = H - WALL * 2;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = game.opt.lowFx ? 0.08 : 0.14;
+  ctx.strokeStyle = th.wall;
+  ctx.lineWidth = 1.25;
+  for (let i = 0; i < 7; i++) {
+    const y = WALL + ((i * 97 + now * (10 + i * 3)) % ah);
+    ctx.beginPath();
+    ctx.moveTo(WALL, y);
+    for (let x = WALL; x <= W - WALL; x += 48) {
+      ctx.lineTo(x, y + Math.sin(now * 0.8 + i + x * 0.012) * 8);
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = game.opt.lowFx ? 0.05 : 0.10;
+  ctx.font = '20px serif';
+  ctx.textAlign = 'center';
+  for (let i = 0; i < 10; i++) {
+    const x = WALL + ((i * 131 + now * 12) % aw);
+    const y = WALL + ((i * 73 + Math.sin(now + i) * 18) % ah);
+    ctx.fillText(i % 2 ? '✧' : '◇', x, y);
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
 // Themed arena backdrop: gradient vignette, twinkling dust, slow arcane runes.
 function drawBackground() {
   const th = currentTheme();
@@ -143,6 +172,8 @@ function drawBackground() {
   ctx.lineWidth = 1;
   for (let x = WALL; x <= W - WALL; x += 64) { ctx.beginPath(); ctx.moveTo(x, WALL); ctx.lineTo(x, H - WALL); ctx.stroke(); }
   for (let y = WALL; y <= H - WALL; y += 64) { ctx.beginPath(); ctx.moveTo(WALL, y); ctx.lineTo(W - WALL, y); ctx.stroke(); }
+
+  drawRealmDepth(th, now);
 
   // realm-flavoured decoration (embers, snow, dust, grass, …)
   drawRealmDecor(th);
