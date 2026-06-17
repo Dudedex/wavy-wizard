@@ -63,6 +63,74 @@ function drawGroundTree(g, x, y, s, leaf, alpha = 1) {
   g.restore();
 }
 
+
+function drawSnowDrift(g, x, y, r, alpha = 1) {
+  g.save();
+  g.globalAlpha *= alpha;
+  const grad = g.createRadialGradient(x - r * 0.2, y - r * 0.25, r * 0.1, x, y, r);
+  grad.addColorStop(0, 'rgba(255,255,255,0.95)');
+  grad.addColorStop(0.65, 'rgba(230,242,255,0.62)');
+  grad.addColorStop(1, 'rgba(170,195,215,0.16)');
+  g.fillStyle = grad;
+  g.beginPath(); g.ellipse(x, y, r, r * 0.42, 0, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(255,255,255,0.45)'; g.lineWidth = 1;
+  g.beginPath(); g.arc(x - r * 0.1, y - r * 0.05, r * 0.55, Math.PI * 1.08, Math.PI * 1.78); g.stroke();
+  g.restore();
+}
+
+function drawSnowflake(g, x, y, r, rot = 0, alpha = 1) {
+  g.save();
+  g.translate(x, y); g.rotate(rot);
+  g.globalAlpha *= alpha;
+  g.strokeStyle = 'rgba(245,252,255,0.88)';
+  g.lineWidth = Math.max(1, r * 0.12);
+  g.lineCap = 'round';
+  for (let i = 0; i < 6; i++) {
+    const a = i * Math.PI / 3;
+    const x2 = Math.cos(a) * r, y2 = Math.sin(a) * r;
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(x2, y2); g.stroke();
+    const bx = Math.cos(a) * r * 0.55, by = Math.sin(a) * r * 0.55;
+    for (const side of [-1, 1]) {
+      const aa = a + side * Math.PI * 0.78;
+      g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + Math.cos(aa) * r * 0.22, by + Math.sin(aa) * r * 0.22); g.stroke();
+    }
+  }
+  g.restore();
+}
+
+function drawFireplace(g, flamePulse = 1) {
+  g.save();
+  // stone hearth
+  g.fillStyle = 'rgba(0,0,0,0.24)';
+  g.beginPath(); g.ellipse(0, 18, 30, 8, 0, 0, Math.PI * 2); g.fill();
+  const stones = [[-22,13,8],[-12,17,7],[0,18,8],[13,17,7],[23,13,8]];
+  for (const [x, y, r] of stones) {
+    g.fillStyle = '#5a5147'; g.strokeStyle = '#2d261f'; g.lineWidth = 1.5;
+    g.beginPath(); g.ellipse(x, y, r, r * 0.55, 0, 0, Math.PI * 2); g.fill(); g.stroke();
+  }
+  // crossed logs with ember cuts
+  g.lineCap = 'round';
+  g.strokeStyle = '#6a3d21'; g.lineWidth = 7;
+  g.beginPath(); g.moveTo(-18, 11); g.lineTo(18, 4); g.moveTo(-18, 4); g.lineTo(18, 12); g.stroke();
+  g.strokeStyle = '#b46a32'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(-10, 9); g.lineTo(8, 6); g.moveTo(-8, 5); g.lineTo(11, 10); g.stroke();
+  // layered flames
+  g.shadowColor = '#ff7a2a'; g.shadowBlur = 18 * flamePulse;
+  g.fillStyle = '#ff5a1f';
+  g.beginPath();
+  g.moveTo(-13, 9); g.quadraticCurveTo(-7, -14 * flamePulse, 0, -24 * flamePulse); g.quadraticCurveTo(10, -10 * flamePulse, 13, 9); g.closePath(); g.fill();
+  g.fillStyle = '#ffb347';
+  g.beginPath();
+  g.moveTo(-7, 10); g.quadraticCurveTo(-2, -8 * flamePulse, 4, -17 * flamePulse); g.quadraticCurveTo(8, -5 * flamePulse, 7, 10); g.closePath(); g.fill();
+  g.fillStyle = '#ffe96b';
+  g.beginPath(); g.moveTo(-3, 9); g.quadraticCurveTo(1, -4 * flamePulse, 3, 9); g.closePath(); g.fill();
+  g.shadowBlur = 0;
+  // sparks
+  g.fillStyle = 'rgba(255,220,120,0.85)';
+  for (let i = 0; i < 4; i++) { g.beginPath(); g.arc(-12 + i * 8, -12 - Math.sin(flamePulse + i) * 5, 1.5, 0, Math.PI * 2); g.fill(); }
+  g.restore();
+}
+
 function drawNaturalTerrain(th) {
   const now = performance.now() / 1000;
   const aw = W - WALL * 2, ah = H - WALL * 2;
@@ -93,6 +161,7 @@ function drawNaturalTerrain(th) {
     const grad = ctx.createLinearGradient(WALL, WALL, W - WALL, H - WALL);
     grad.addColorStop(0, '#c8d6df'); grad.addColorStop(1, '#7f8f9d');
     ctx.fillStyle = grad; ctx.fillRect(WALL, WALL, aw, ah);
+    for (const s of bgSnow) drawSnowDrift(ctx, s.x, s.y, s.r, 0.42);
     ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 2;
     for (let i = 0; i < 18; i++) { const x = WALL + (i * 83) % aw, y = WALL + (i * 47) % ah; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 50, y + Math.sin(i) * 22); ctx.stroke(); }
   } else if (id === 'fire' || id === 'ember') {
@@ -137,15 +206,12 @@ function drawRealmDecor(th) {
     }
     ctx.shadowBlur = 0;
   } else if (id === 'ice') {
-    // snow lying on the ground
-    ctx.globalAlpha = 0.6; ctx.fillStyle = '#f3f8ff';
-    for (const s of bgSnow) { ctx.beginPath(); ctx.ellipse(s.x, s.y, s.r, s.r * 0.5, 0, 0, Math.PI * 2); ctx.fill(); }
-    ctx.globalAlpha = 1;
-    if (!lowFx) for (const f of bgFlakes) { // falling flurries
+    // snow lying on the ground as soft layered drifts
+    for (const s of bgSnow) drawSnowDrift(ctx, s.x, s.y, s.r, 0.52);
+    if (!lowFx) for (const f of bgFlakes) { // falling detailed snowflakes
       const y = WALL + ((f.y - WALL + now * f.sp) % ah + ah) % ah;
       const x = f.x + Math.sin(now * 0.8 + f.ph) * f.sway;
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.beginPath(); ctx.arc(x, y, f.r, 0, Math.PI * 2); ctx.fill();
+      drawSnowflake(ctx, x, y, f.r * 2.1, now + f.ph, 0.75);
     }
   } else if (id === 'earth') {
     ctx.globalAlpha = 0.08; ctx.fillStyle = '#9a7a44'; ctx.fillRect(WALL, WALL, aw, ah); // dusty wash
@@ -303,15 +369,9 @@ function drawStructure(s) {
   g.translate(s.x, s.y);
   if (s.type === 'earth') { // a detailed living tree landmark
     drawGroundTree(g, 0, 0, 0.92, '#3f8a4a', 1);
-  } else if (s.type === 'fire') { // a campfire
-    g.strokeStyle = '#6a4a28'; g.lineWidth = 4; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(-12, 16); g.lineTo(12, 10); g.moveTo(-12, 10); g.lineTo(12, 16); g.stroke();
-    const f = 0.6 + Math.sin(performance.now() / 90 + s.ph) * 0.4;
-    g.fillStyle = '#ff8c2a'; g.shadowColor = '#ff8c2a'; g.shadowBlur = 16 * f;
-    g.beginPath(); g.moveTo(-9, 8); g.quadraticCurveTo(-4, -16 * f, 0, -20 * f); g.quadraticCurveTo(4, -16 * f, 9, 8); g.closePath(); g.fill();
-    g.fillStyle = '#ffe96b';
-    g.beginPath(); g.moveTo(-4, 8); g.quadraticCurveTo(0, -8 * f, 4, 8); g.closePath(); g.fill();
-    g.shadowBlur = 0;
+  } else if (s.type === 'fire') { // stone fireplace / campfire landmark
+    const f = 0.72 + Math.sin(performance.now() / 90 + s.ph) * 0.28;
+    drawFireplace(g, f);
   } else if (s.type === 'wind') { // a wind cloud with a swirl
     g.fillStyle = 'rgba(190,235,255,0.85)';
     g.beginPath(); g.arc(-12, 2, 12, 0, Math.PI * 2); g.arc(2, -4, 15, 0, Math.PI * 2); g.arc(16, 3, 11, 0, Math.PI * 2); g.fill();
