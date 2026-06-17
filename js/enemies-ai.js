@@ -497,12 +497,28 @@ function updateEnemies(dt) {
     if (e.windup > 0) { mx = 0; my = 0; } // rooted while winding up
     if (e.charging > 0) { mx = e.chargeX; my = e.chargeY; spd = e.chargeSpd; }
 
+    const oldX = e.x, oldY = e.y;
     e.x += (mx * spd * slowFactor + e.kx) * dt;
     e.y += (my * spd * slowFactor + e.ky) * dt;
     e.kx *= Math.pow(0.02, dt); // knockback decay
     e.ky *= Math.pow(0.02, dt);
     e.x = clamp(e.x, WALL + e.r, W - WALL - e.r);
     e.y = clamp(e.y, WALL + e.r, H - WALL - e.r);
+    e.vx = (e.x - oldX) / Math.max(dt, 0.0001);
+    e.vy = (e.y - oldY) / Math.max(dt, 0.0001);
+
+    // Lightweight movement particles give the procedural enemy assets a real
+    // animated footprint without requiring external sprite sheets.
+    if (!game.opt.lowFx && Math.hypot(e.vx, e.vy) > 25 && Math.random() < dt * (e.boss ? 18 : e.elite ? 12 : 7)) {
+      const back = Math.atan2(-e.vy, -e.vx) + rand(-0.55, 0.55);
+      game.particles.push({
+        x: e.x + Math.cos(back) * e.r * 0.65,
+        y: e.y + Math.sin(back) * e.r * 0.65,
+        vx: Math.cos(back) * rand(10, 55),
+        vy: Math.sin(back) * rand(10, 55),
+        t: 0, dur: rand(0.18, 0.42), color: e.color, r: rand(1.2, Math.max(2, e.r * 0.16)),
+      });
+    }
 
     // ranged attack
     if (e.ranged) {

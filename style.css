@@ -206,6 +206,25 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 .card.choice { cursor: pointer; transition: transform 0.08s, border-color 0.08s; }
 .card.choice:hover { transform: translateY(-4px); border-color: #5fb4ff; }
 .card .icon { font-size: 34px; line-height: 1; filter: drop-shadow(0 0 8px rgba(120,200,255,0.4)); }
+
+.card .spell-shop-icon,
+.owned-spell .spell-shop-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto;
+  border-radius: 14px;
+  background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.14), var(--spell-soft), rgba(6,10,18,0.8));
+  border: 1px solid var(--spell);
+  box-shadow: 0 0 16px var(--spell-soft);
+  filter: none;
+}
+.card .spell-shop-icon svg,
+.owned-spell .spell-shop-icon svg { width: 34px; height: 34px; overflow: visible; }
+.owned-spell .spell-shop-icon { width: 28px; height: 28px; min-width: 28px; border-radius: 9px; }
+.owned-spell .spell-shop-icon svg { width: 23px; height: 23px; }
+
 .card .name { font-weight: 700; font-size: 16px; }
 .card .tier-badge {
   font-size: 12px; font-weight: 700; letter-spacing: 1px;

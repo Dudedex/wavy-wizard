@@ -4,6 +4,7 @@
 // Enemy "shades" — distinct little-alien sprites per enemy type
 // ===========================================================================
 
+
 const SHADE_OF = {
   blob: 'ooze', bat: 'flyer', spitter: 'maw', brute: 'hulk', imp: 'horned',
   shaman: 'mystic', spark: 'mote', goblin: 'grin', leech: 'worm', warden: 'sentinel',
@@ -11,12 +12,90 @@ const SHADE_OF = {
   bomber: 'bomb', caster: 'void',
 };
 
+function alphaColor(col, alpha) {
+  if (col[0] === '#' && (col.length === 7 || col.length === 4)) {
+    const full = col.length === 4 ? '#' + col[1] + col[1] + col[2] + col[2] + col[3] + col[3] : col;
+    const n = parseInt(full.slice(1), 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+  }
+  return col.startsWith('rgb(') ? col.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`) : col;
+}
+
+function drawEnemyAssetParticles(g, e, R, col, faceX) {
+  const t = e.wobble || 0;
+  const seed = (e.x * 0.017 + e.y * 0.013) || 0;
+  const moving = Math.hypot(e.vx || 0, e.vy || 0);
+  const drift = moving > 8 ? -faceX : 0;
+  const count = e.boss ? 14 : e.elite ? 10 : 5;
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < count; i++) {
+    const phase = (t * (0.7 + i * 0.09) + seed + i * 1.73) % (Math.PI * 2);
+    const orbit = R * (0.7 + (i % 4) * 0.18);
+    const x = Math.cos(phase) * orbit * 0.75 + drift * R * (0.25 + (i % 3) * 0.2);
+    const y = Math.sin(phase * 1.35) * orbit * 0.42 + R * 0.4;
+    const a = 0.12 + 0.18 * (0.5 + 0.5 * Math.sin(phase));
+    g.fillStyle = alphaColor(col, a);
+    g.beginPath(); g.arc(x, y, Math.max(1.2, R * (0.045 + (i % 2) * 0.025)), 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+
+
+function drawAssetDetails(g, e, R, col, faceX) {
+  const t = e.wobble || 0;
+  const bob = Math.sin(t * 1.3) * R * 0.05;
+  g.save();
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.strokeStyle = alphaColor('#ffffff', 0.28);
+  g.lineWidth = Math.max(1, R * 0.07);
+  if (e.ranged) {
+    // pulsating throat/orb for projectile enemies
+    g.fillStyle = alphaColor('#fff6a8', 0.35 + 0.25 * Math.sin(t * 2));
+    g.beginPath(); g.arc(faceX * R * 0.42, R * 0.18 + bob, R * 0.16, 0, Math.PI * 2); g.fill();
+  }
+  if (e.flee) {
+    // loot satchel for goblins
+    g.fillStyle = '#8a5a2e';
+    g.beginPath(); g.ellipse(-faceX * R * 0.7, R * 0.45, R * 0.24, R * 0.32, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ffd454'; g.fillRect(-faceX * R * 0.78, R * 0.28, R * 0.16, R * 0.1);
+  }
+  if (e.drainShield) {
+    g.strokeStyle = alphaColor('#7be0c0', 0.65);
+    for (let i = -1; i <= 1; i += 2) {
+      g.beginPath(); g.moveTo(i * R * 0.45, -R * 0.45); g.quadraticCurveTo(i * R * 0.7, bob, i * R * 0.4, R * 0.65); g.stroke();
+    }
+  }
+  if (e.warden) {
+    g.strokeStyle = alphaColor('#cfe2ff', 0.75);
+    g.beginPath(); g.arc(0, 0, R * (0.72 + 0.05 * Math.sin(t * 2)), 0, Math.PI * 2); g.stroke();
+  }
+  if (e.mirror) {
+    g.fillStyle = alphaColor('#ffffff', 0.45);
+    g.beginPath(); g.moveTo(-R * 0.45, -R * 0.55); g.lineTo(-R * 0.1, -R * 0.82); g.lineTo(-R * 0.25, -R * 0.2); g.closePath(); g.fill();
+  }
+  if (e.nuller) {
+    g.strokeStyle = alphaColor('#b08aff', 0.7);
+    g.beginPath(); g.arc(0, 0, R * 0.82, t, t + Math.PI * 1.35); g.stroke();
+  }
+  g.restore();
+}
+
+function drawAssetRim(g, R, col) {
+  g.strokeStyle = 'rgba(255,255,255,0.22)';
+  g.lineWidth = Math.max(1, R * 0.06);
+  g.beginPath(); g.arc(-R * 0.25, -R * 0.25, R * 0.55, Math.PI * 1.08, Math.PI * 1.72); g.stroke();
+  g.strokeStyle = col;
+}
+
 
 // Draws a translucent glowing alien shade at the current (scaled) origin.
 // R = radius, col = body colour, faceX = -1/1 toward the player.
 function drawShade(g, e, R, col, faceX) {
   const style = SHADE_OF[e.type] || 'ooze';
   const fx = faceX * R * 0.12;
+  drawEnemyAssetParticles(g, e, R, col, faceX);
   g.lineJoin = 'round'; g.lineCap = 'round';
   // glowing alien eye (dark socket + bright core)
   const eye = (x, y, rx, ry) => {
@@ -252,4 +331,6 @@ function drawShade(g, e, R, col, faceX) {
       eye(R * 0.3 + fx, -R * 0.15, R * 0.2, R * 0.26);
     }
   }
+  drawAssetDetails(g, e, R, col, faceX);
+  drawAssetRim(g, R, col);
 }
