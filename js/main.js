@@ -2434,9 +2434,9 @@ function showLevelUp() {
 document.getElementById('btn-reroll').onclick = () => {
   const p = game.player;
   // Arcane Loan: rerolling is forbidden while dangerously frail
-  if (game.arcaneLoan && p.stats.maxHp < 6) return;
+  if (game.arcaneLoan && p.stats.maxHp < 6) { sfx('shopDeny'); return; }
   const cost = rerollCost();
-  if (game.gold < cost) return;
+  if (game.gold < cost) { sfx('shopDeny'); return; }
   game.gold -= cost;
   game.rerolls++;
   // Arcane Loan: each reroll gambles on a damage boost / max-HP toll
@@ -2445,7 +2445,7 @@ document.getElementById('btn-reroll').onclick = () => {
     if (Math.random() < 0.10) { p.stats.maxHp = Math.max(1, p.stats.maxHp - 5); p.hp = Math.min(p.hp, p.stats.maxHp); }
   }
   generateShop();
-  sfx('buy');
+  sfx('shopReroll');
   renderShop();
   saveRun();
 };

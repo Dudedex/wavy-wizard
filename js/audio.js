@@ -144,6 +144,14 @@ function sfx(name) {
     case 'frost':  blip(900, 1400, 0.08, 'sine', 0.03); break;
     case 'pickup': blip(900, 1500, 0.07, 'sine', 0.035); break;
     case 'buy':    blip(600, 1200, 0.12, 'square', 0.045); break;
+    case 'shopBuy':    chord([520, 900, 0.10, 'triangle', 0.028], [760, 1320, 0.12, 'sine', 0.022, 0.045]); break;
+    case 'shopSpell':  chord([740, 1480, 0.14, 'sine', 0.026], [1110, 1665, 0.16, 'triangle', 0.018, 0.05]); break;
+    case 'shopFuse':   chord([420, 840, 0.16, 'triangle', 0.03], [840, 1680, 0.22, 'sine', 0.026, 0.05], [1260, 1890, 0.18, 'sine', 0.018, 0.11]); break;
+    case 'shopReroll': arpeggio([360, 520, 700, 520], 'square', 0.022, 0.045, 0.035); break;
+    case 'shopLock':   blip(280, 620, 0.11, 'triangle', 0.035); blip(620, 420, 0.08, 'sine', 0.018, 0.07); break;
+    case 'shopSell':   blip(820, 360, 0.16, 'triangle', 0.032); blip(520, 260, 0.10, 'sine', 0.018, 0.06); break;
+    case 'shopDeny':   blip(160, 95, 0.12, 'sawtooth', 0.035); break;
+    case 'shopLegendary': chord([392, 784, 0.22, 'sine', 0.036], [587, 1174, 0.24, 'triangle', 0.026, 0.05], [880, 1760, 0.20, 'sine', 0.018, 0.1]); break;
     case 'sell':   blip(800, 400, 0.12, 'square', 0.04); break;
     case 'hurt':   blip(220, 80, 0.18, 'sawtooth', 0.08); break;
     case 'heal':   blip(500, 900, 0.12, 'sine', 0.035); break;
