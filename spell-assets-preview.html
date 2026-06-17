@@ -27,11 +27,15 @@
     const ids = Object.keys(SPELLS);
     const start = performance.now();
     function hexA(hex, alpha) { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`; }
+    function tri(x, y, r, a) { ctx.fillStyle = `rgba(220,248,255,${a})`; ctx.beginPath(); ctx.moveTo(x + r * 1.6, y); ctx.lineTo(x - r, y - r * .75); ctx.lineTo(x - r * .55, y); ctx.lineTo(x - r, y + r * .75); ctx.closePath(); ctx.fill(); }
+    function shield(x, y, r, color) { ctx.fillStyle = hexA(color, .14); ctx.strokeStyle = hexA(color, .9); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, y - r); ctx.quadraticCurveTo(x + r * .78, y - r * .72, x + r * .72, y); ctx.quadraticCurveTo(x + r * .58, y + r * .62, x, y + r); ctx.quadraticCurveTo(x - r * .58, y + r * .62, x - r * .72, y); ctx.quadraticCurveTo(x - r * .78, y - r * .72, x, y - r); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    function cloud(x, y, r, color, t) { for (let k = 0; k < 8; k++) { const a = k * Math.PI * 2 / 8 + t * .3; ctx.fillStyle = hexA(color, .22); ctx.beginPath(); ctx.ellipse(x + Math.cos(a) * r * .35, y + Math.sin(a * 1.2) * r * .22, r * .32, r * .22, a, 0, Math.PI * 2); ctx.fill(); } ctx.strokeStyle = hexA(color, .65); ctx.setLineDash([5, 7]); ctx.beginPath(); ctx.arc(x, y, r * .65, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
     function drawProjectile(def, kind, x, y, t, tier) {
       const r = kind === 'fireball' ? 10 : kind === 'frost' ? 7 : 6;
       const ang = Math.sin(t * 0.8) * 0.35;
       const pulse = 0.5 + Math.sin(t * 8) * 0.5;
       ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.globalCompositeOperation = 'lighter';
+      if (kind === 'missile') { for (let k = 3; k >= 0; k--) tri(-k * r * 1.45, 0, r * (1.05 - k * .12), .88 - k * .16); ctx.fillStyle = hexA(def.color, .75); for (let k = 0; k < 9; k++) { ctx.beginPath(); ctx.arc(-5 - k * 3.2, (k % 3 - 1) * r * .36, Math.max(1, r * .16), 0, Math.PI * 2); ctx.fill(); } ctx.restore(); return; }
       const tail = 38;
       const grad = ctx.createLinearGradient(-tail, 0, r, 0);
       grad.addColorStop(0, hexA(def.color, 0)); grad.addColorStop(.55, hexA(def.color, .42)); grad.addColorStop(1, hexA(def.color, .9));
@@ -54,13 +58,23 @@
         ctx.save(); ctx.fillStyle = 'rgba(196,123,255,.08)'; ctx.strokeStyle = 'rgba(196,123,255,.16)'; ctx.beginPath(); ctx.roundRect(cellW * col + 14, row * cellH + 18, cellW - 28, cellH - 30, 14); ctx.fill(); ctx.stroke(); ctx.restore();
         const tier = (i % 4) + 1;
         if (def.breath) {
-          ctx.save(); ctx.translate(x - 28, y); ctx.rotate(Math.sin(t + i) * .35); const grad = ctx.createLinearGradient(0,0,72,0); grad.addColorStop(0, hexA(def.color,.85)); grad.addColorStop(1, hexA(def.color,0)); ctx.fillStyle = grad; ctx.beginPath(); ctx.moveTo(0,0); ctx.arc(0,0,78,-.48,.48); ctx.closePath(); ctx.fill(); ctx.restore();
-        } else if (id === 'nova' || id === 'shield') {
-          ctx.strokeStyle = def.color; ctx.lineWidth = 4; ctx.globalAlpha = .75; ctx.beginPath(); ctx.arc(x, y, 22 + Math.sin(t * 4) * 8, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+          ctx.save(); ctx.translate(x - 28, y); ctx.rotate(Math.sin(t + i) * .25); ctx.globalCompositeOperation = 'lighter'; for (let k = 0; k < 4; k++) { const u = (t * .9 + k * .18) % 1; ctx.globalAlpha = .75 - k * .12; ctx.strokeStyle = def.color; ctx.lineWidth = 8 * (1 - u) + 1.5; ctx.beginPath(); ctx.arc(0, 0, 78 * u, -.48, .48); ctx.stroke(); } ctx.globalAlpha = 1; ctx.restore();
+        } else if (id === 'shield') {
+          shield(x, y, 32, def.color);
+        } else if (id === 'nova') {
+          ctx.strokeStyle = def.color; ctx.lineWidth = 5; ctx.globalAlpha = .75; ctx.beginPath(); ctx.arc(x, y, 14 + ((t * 38) % 42), 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+        } else if (id === 'poison') {
+          cloud(x, y, 48, def.color, t);
+        } else if (id === 'lightning') {
+          ctx.strokeStyle = def.color; ctx.lineWidth = 5; ctx.shadowColor = def.color; ctx.shadowBlur = 12; ctx.beginPath(); ctx.moveTo(x - 48, y - 10); ctx.lineTo(x - 18, y - 22); ctx.lineTo(x - 28, y + 2); ctx.lineTo(x + 8, y - 6); ctx.lineTo(x - 2, y + 24); ctx.lineTo(x + 48, y - 8); ctx.stroke(); ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 2; ctx.stroke(); ctx.shadowBlur = 0;
+        } else if (id === 'drain') {
+          for (let k = 0; k < 9; k++) { const u = k / 8; const px = x - 44 + u * 88, py = y + Math.sin(t * 4 + k) * 10; ctx.fillStyle = `rgba(255,70,110,${.35 + .5 * (1 - u)})`; ctx.beginPath(); ctx.moveTo(px, py - 7); ctx.quadraticCurveTo(px + 6, py, px, py + 9); ctx.quadraticCurveTo(px - 6, py, px, py - 7); ctx.fill(); }
         } else if (id === 'orbs') {
           for (let k = 0; k < 4; k++) { const a = t * 1.5 + k * Math.PI / 2; drawProjectile(def, 'orb', x + Math.cos(a) * 32, y + Math.sin(a) * 22, t + k, tier); }
+        } else if (id === 'meteor') {
+          drawProjectile(def, 'fireball', x, y, t + i, tier);
         } else {
-          drawProjectile(def, id === 'fireball' || id === 'meteor' ? 'fireball' : id === 'frost' ? 'frost' : 'missile', x, y, t + i, tier);
+          drawProjectile(def, id === 'fireball' ? 'fireball' : id === 'frost' ? 'frost' : 'missile', x, y, t + i, tier);
         }
         ctx.font = '26px sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(def.icon, x - 46, y - 36);
         ctx.fillStyle = '#eaf2ff'; ctx.font = 'bold 15px system-ui, sans-serif'; ctx.fillText(def.name, x, y + 58);
