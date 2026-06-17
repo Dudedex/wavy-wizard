@@ -18,6 +18,102 @@ const bgMotes   = Array.from({ length: 60 }, () => ({ x: rand(WALL, W - WALL), y
 const bgSnow    = Array.from({ length: 46 }, () => ({ x: rand(WALL + 20, W - WALL - 20), y: rand(WALL + 20, H - WALL - 20), r: rand(14, 34) }));
 const bgPebbles = Array.from({ length: 34 }, () => ({ x: rand(WALL + 20, W - WALL - 20), y: rand(WALL + 20, H - WALL - 20), r: rand(2.5, 6), c: pick(['#7a6038', '#8a6e44', '#5e4a2a']) }));
 const bgGrass   = Array.from({ length: 90 }, () => ({ x: rand(WALL + 10, W - WALL - 10), y: rand(WALL + 10, H - WALL - 10), h: rand(8, 18), lean: rand(-3, 3), c: pick(['#3f8a4a', '#4f9e54', '#357a40']) }));
+const bgTrees   = Array.from({ length: 18 }, () => ({ x: rand(WALL + 30, W - WALL - 30), y: rand(WALL + 30, H - WALL - 30), s: rand(0.7, 1.25), ph: rand(0, Math.PI * 2), c: pick(['#2f7a3a', '#3f8a4a', '#286833']) }));
+const bgRoots   = Array.from({ length: 24 }, () => ({ x: rand(WALL + 20, W - WALL - 20), y: rand(WALL + 20, H - WALL - 20), len: rand(28, 72), a: rand(-0.8, 0.8), c: pick(['#5a3f22', '#6a4a28', '#3f3020']) }));
+
+
+function drawGroundTree(g, x, y, s, leaf, alpha = 1) {
+  g.save();
+  g.translate(x, y);
+  g.scale(s, s);
+  g.globalAlpha *= alpha;
+  g.lineCap = 'round';
+  // soft shadow anchors the tree to the floor
+  g.fillStyle = 'rgba(0,0,0,0.22)';
+  g.beginPath(); g.ellipse(0, 18, 20, 7, 0, 0, Math.PI * 2); g.fill();
+  // tapered trunk
+  const bark = g.createLinearGradient(-6, -12, 8, 24);
+  bark.addColorStop(0, '#8a6137'); bark.addColorStop(1, '#3f2718');
+  g.fillStyle = bark;
+  g.beginPath();
+  g.moveTo(-5, 18); g.quadraticCurveTo(-7, 2, -3, -16);
+  g.quadraticCurveTo(1, -20, 5, -16);
+  g.quadraticCurveTo(7, 2, 5, 18);
+  g.closePath(); g.fill();
+  // branches
+  g.strokeStyle = '#5a351f'; g.lineWidth = 3;
+  for (const [sx, sy, ex, ey] of [[-2,-9,-15,-22],[2,-12,16,-25],[0,-4,13,-10],[-1,0,-14,-7]]) {
+    g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo((sx + ex) / 2, sy - 4, ex, ey); g.stroke();
+  }
+  // clustered leafy canopy rather than one blob
+  g.shadowColor = leaf; g.shadowBlur = 8;
+  const clumps = [[0,-30,18],[-16,-22,14],[16,-23,15],[-7,-40,13],[10,-39,12],[0,-17,15]];
+  for (const [cx, cy, r] of clumps) {
+    g.fillStyle = leaf;
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.10)';
+    g.beginPath(); g.arc(cx - r * 0.25, cy - r * 0.35, r * 0.35, 0, Math.PI * 2); g.fill();
+  }
+  g.shadowBlur = 0;
+  // roots
+  g.strokeStyle = 'rgba(74,48,28,0.85)'; g.lineWidth = 2;
+  for (const dir of [-1, 1]) {
+    g.beginPath(); g.moveTo(dir * 2, 15); g.quadraticCurveTo(dir * 12, 20, dir * 24, 17); g.stroke();
+  }
+  g.restore();
+}
+
+function drawNaturalTerrain(th) {
+  const now = performance.now() / 1000;
+  const aw = W - WALL * 2, ah = H - WALL * 2;
+  const id = th.id;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(WALL, WALL, aw, ah); ctx.clip();
+
+  if (id === 'forest') {
+    ctx.fillStyle = '#102016'; ctx.fillRect(WALL, WALL, aw, ah);
+    ctx.globalAlpha = 0.42; ctx.fillStyle = '#183522';
+    for (let y = WALL; y < H - WALL; y += 44) {
+      ctx.beginPath();
+      ctx.moveTo(WALL, y);
+      for (let x = WALL; x <= W - WALL; x += 36) ctx.lineTo(x, y + Math.sin(x * 0.018 + y * 0.04) * 7);
+      ctx.lineTo(W - WALL, y + 44); ctx.lineTo(WALL, y + 44); ctx.closePath(); ctx.fill();
+    }
+    ctx.globalAlpha = 0.82;
+    for (const tr of bgTrees) drawGroundTree(ctx, tr.x, tr.y, tr.s * 0.58, tr.c, 0.45);
+    ctx.globalAlpha = 1;
+  } else if (id === 'earth') {
+    ctx.fillStyle = '#2b2114'; ctx.fillRect(WALL, WALL, aw, ah);
+    for (const r of bgRoots) {
+      ctx.strokeStyle = r.c; ctx.globalAlpha = 0.32; ctx.lineWidth = 3; ctx.beginPath();
+      ctx.moveTo(r.x, r.y); ctx.quadraticCurveTo(r.x + Math.cos(r.a) * r.len * 0.45, r.y + Math.sin(r.a) * r.len * 0.2, r.x + Math.cos(r.a) * r.len, r.y + Math.sin(r.a) * r.len * 0.35); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  } else if (id === 'ice') {
+    const grad = ctx.createLinearGradient(WALL, WALL, W - WALL, H - WALL);
+    grad.addColorStop(0, '#c8d6df'); grad.addColorStop(1, '#7f8f9d');
+    ctx.fillStyle = grad; ctx.fillRect(WALL, WALL, aw, ah);
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 2;
+    for (let i = 0; i < 18; i++) { const x = WALL + (i * 83) % aw, y = WALL + (i * 47) % ah; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 50, y + Math.sin(i) * 22); ctx.stroke(); }
+  } else if (id === 'fire' || id === 'ember') {
+    ctx.fillStyle = '#1a0c08'; ctx.fillRect(WALL, WALL, aw, ah);
+    for (let i = 0; i < 18; i++) {
+      const x = WALL + ((i * 71 + now * 8) % aw), y = WALL + ((i * 43) % ah);
+      ctx.strokeStyle = i % 3 ? 'rgba(120,54,28,0.5)' : 'rgba(255,86,34,0.45)'; ctx.lineWidth = i % 3 ? 2 : 4;
+      ctx.beginPath(); ctx.moveTo(x - 34, y); ctx.lineTo(x, y + 18); ctx.lineTo(x + 36, y - 8); ctx.stroke();
+    }
+  } else if (id === 'wind') {
+    ctx.fillStyle = '#0b1b1a'; ctx.fillRect(WALL, WALL, aw, ah);
+    ctx.strokeStyle = 'rgba(139,224,255,0.13)'; ctx.lineWidth = 2;
+    for (let i = 0; i < 12; i++) { const y = WALL + i * 46; ctx.beginPath(); ctx.moveTo(WALL, y); ctx.bezierCurveTo(W * 0.28, y - 26, W * 0.58, y + 30, W - WALL, y); ctx.stroke(); }
+  } else {
+    ctx.fillStyle = th.bg; ctx.fillRect(WALL, WALL, aw, ah);
+    ctx.globalAlpha = 0.2; ctx.fillStyle = th.wall;
+    for (let i = 0; i < 28; i++) { const x = WALL + (i * 47) % aw, y = WALL + (i * 61) % ah; ctx.beginPath(); ctx.ellipse(x, y, 18, 5, i, 0, Math.PI * 2); ctx.fill(); }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
 
 // Decorates the arena to match the active realm/theme: hot embers (fire),
 // snow drifts + flurries (ice/winter), drifting dust + pebbles (earth),
@@ -117,6 +213,7 @@ function drawBackground() {
   const th = currentTheme();
   ctx.fillStyle = th.bg;
   ctx.fillRect(-30, -30, W + 60, H + 60);
+  drawNaturalTerrain(th);
 
   // soft central glow + darker edges for depth
   const cx = W / 2, cy = H / 2;
@@ -167,11 +264,14 @@ function drawBackground() {
   ctx.restore();
   ctx.globalAlpha = 1;
 
-  // grid
+  // subtle pathing grid, softened so the realms read as natural terrain first
+  ctx.save();
+  ctx.globalAlpha = 0.45;
   ctx.strokeStyle = th.grid;
   ctx.lineWidth = 1;
   for (let x = WALL; x <= W - WALL; x += 64) { ctx.beginPath(); ctx.moveTo(x, WALL); ctx.lineTo(x, H - WALL); ctx.stroke(); }
   for (let y = WALL; y <= H - WALL; y += 64) { ctx.beginPath(); ctx.moveTo(WALL, y); ctx.lineTo(W - WALL, y); ctx.stroke(); }
+  ctx.restore();
 
   drawRealmDepth(th, now);
 
@@ -201,13 +301,8 @@ function drawStructure(s) {
 
   g.save();
   g.translate(s.x, s.y);
-  if (s.type === 'earth') { // a little tree
-    g.fillStyle = '#6a4a28';
-    g.fillRect(-4, 0, 8, 20);
-    g.fillStyle = '#3f8a4a';
-    g.beginPath(); g.arc(0, -8, 18, 0, Math.PI * 2); g.fill();
-    g.beginPath(); g.arc(-12, 2, 12, 0, Math.PI * 2); g.fill();
-    g.beginPath(); g.arc(12, 2, 12, 0, Math.PI * 2); g.fill();
+  if (s.type === 'earth') { // a detailed living tree landmark
+    drawGroundTree(g, 0, 0, 0.92, '#3f8a4a', 1);
   } else if (s.type === 'fire') { // a campfire
     g.strokeStyle = '#6a4a28'; g.lineWidth = 4; g.lineCap = 'round';
     g.beginPath(); g.moveTo(-12, 16); g.lineTo(12, 10); g.moveTo(-12, 10); g.lineTo(12, 16); g.stroke();
