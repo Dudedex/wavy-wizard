@@ -194,7 +194,7 @@ function drawRealmDecor(th) {
   const id = th.id;
   ctx.save();
   if (id === 'fire' || id === 'ember') {
-    ctx.globalAlpha = 0.10 + 0.03 * Math.sin(now * 1.5); // pulsing heat wash
+    ctx.globalAlpha = 0.055 + 0.018 * Math.sin(now * 1.5); // pulsing heat wash
     ctx.fillStyle = '#ff5a1e'; ctx.fillRect(WALL, WALL, aw, ah);
     ctx.globalAlpha = 1;
     if (!lowFx) for (const e of bgEmbers) { // rising embers
@@ -214,7 +214,7 @@ function drawRealmDecor(th) {
       drawSnowflake(ctx, x, y, f.r * 2.1, now + f.ph, 0.75);
     }
   } else if (id === 'earth') {
-    ctx.globalAlpha = 0.08; ctx.fillStyle = '#9a7a44'; ctx.fillRect(WALL, WALL, aw, ah); // dusty wash
+    ctx.globalAlpha = 0.045; ctx.fillStyle = '#9a7a44'; ctx.fillRect(WALL, WALL, aw, ah); // dusty wash
     ctx.globalAlpha = 1;
     for (const p of bgPebbles) { ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
     if (!lowFx) for (const m of bgMotes) { // drifting dust motes
@@ -225,7 +225,7 @@ function drawRealmDecor(th) {
     }
     ctx.globalAlpha = 1;
   } else if (id === 'forest') {
-    ctx.globalAlpha = 0.10; ctx.fillStyle = '#2f7a3a'; ctx.fillRect(WALL, WALL, aw, ah); // green wash
+    ctx.globalAlpha = 0.055; ctx.fillStyle = '#2f7a3a'; ctx.fillRect(WALL, WALL, aw, ah); // green wash
     ctx.globalAlpha = 0.85; ctx.lineWidth = 2; ctx.lineCap = 'round';
     for (const g of bgGrass) { // little grass blades swaying
       const sway = Math.sin(now * 1.2 + g.x * 0.03) * 2;
@@ -250,7 +250,7 @@ function drawRealmDepth(th, now) {
   const aw = W - WALL * 2, ah = H - WALL * 2;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = game.opt.lowFx ? 0.08 : 0.14;
+  ctx.globalAlpha = game.opt.lowFx ? 0.045 : 0.075;
   ctx.strokeStyle = th.wall;
   ctx.lineWidth = 1.25;
   for (let i = 0; i < 7; i++) {
@@ -262,7 +262,7 @@ function drawRealmDepth(th, now) {
     }
     ctx.stroke();
   }
-  ctx.globalAlpha = game.opt.lowFx ? 0.05 : 0.10;
+  ctx.globalAlpha = game.opt.lowFx ? 0.03 : 0.055;
   ctx.font = '20px serif';
   ctx.textAlign = 'center';
   for (let i = 0; i < 10; i++) {
@@ -273,6 +273,74 @@ function drawRealmDepth(th, now) {
   ctx.restore();
   ctx.globalAlpha = 1;
 }
+function drawElementMapLogo(th, cx, cy, now) {
+  const id = th.id;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(now * 0.025);
+  ctx.globalAlpha = game.opt.lowFx ? 0.055 : 0.075;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = id === 'earth' ? 'rgba(210,218,210,0.9)' : th.wall;
+  ctx.fillStyle = id === 'earth' ? 'rgba(210,218,210,0.18)' : th.wall;
+  ctx.lineWidth = 5;
+
+  if (id === 'earth' || id === 'forest') {
+    // light gray grass crest for earth/forest maps
+    ctx.strokeStyle = 'rgba(212,220,212,0.82)';
+    for (let i = -3; i <= 3; i++) {
+      const x = i * 18;
+      ctx.beginPath();
+      ctx.moveTo(x, 70);
+      ctx.quadraticCurveTo(x + i * 4, 20, x + Math.sin(i) * 16, -62);
+      ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(0, 72, 72, Math.PI * 1.08, Math.PI * 1.92); ctx.stroke();
+  } else if (id === 'fire' || id === 'ember') {
+    // flame sigil
+    ctx.fillStyle = 'rgba(255,110,46,0.20)';
+    ctx.strokeStyle = 'rgba(255,170,70,0.72)';
+    ctx.beginPath();
+    ctx.moveTo(0, 78);
+    ctx.quadraticCurveTo(-62, 16, -15, -28);
+    ctx.quadraticCurveTo(4, -52, 0, -86);
+    ctx.quadraticCurveTo(64, -34, 48, 24);
+    ctx.quadraticCurveTo(38, 58, 0, 78);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 52); ctx.quadraticCurveTo(-20, 15, 12, -35); ctx.quadraticCurveTo(28, 5, 0, 52); ctx.stroke();
+  } else if (id === 'ice') {
+    // snowflake sigil
+    ctx.strokeStyle = 'rgba(225,250,255,0.78)';
+    for (let i = 0; i < 6; i++) {
+      const a = i * Math.PI / 3;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * 88, Math.sin(a) * 88); ctx.stroke();
+      const bx = Math.cos(a) * 48, by = Math.sin(a) * 48;
+      for (const side of [-1, 1]) {
+        const aa = a + side * 0.78;
+        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + Math.cos(aa) * 26, by + Math.sin(aa) * 26); ctx.stroke();
+      }
+    }
+  } else if (id === 'wind') {
+    // airy spiral gust
+    ctx.strokeStyle = 'rgba(190,235,255,0.72)';
+    ctx.beginPath();
+    for (let i = 0; i <= 44; i++) {
+      const a = i * 0.35;
+      const r = 8 + i * 1.9;
+      const x = Math.cos(a) * r;
+      const y = Math.sin(a) * r * 0.55;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+    for (const y of [-46, 48]) { ctx.beginPath(); ctx.moveTo(-88, y); ctx.bezierCurveTo(-20, y - 24, 28, y + 22, 92, y - 6); ctx.stroke(); }
+  } else {
+    ctx.globalAlpha = game.opt.lowFx ? 0.045 : 0.065;
+    ctx.beginPath(); ctx.arc(0, 0, 88, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -76); ctx.lineTo(66, 38); ctx.lineTo(-66, 38); ctx.closePath(); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 
 // Themed arena backdrop: gradient vignette, twinkling dust, slow arcane runes.
 function drawBackground() {
@@ -303,10 +371,12 @@ function drawBackground() {
     ctx.globalAlpha = 1;
   }
 
-  // faint slowly-rotating arcane runes behind the action
+  drawElementMapLogo(th, cx, cy, now);
+
+  // very faint guide rings behind the action
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.globalAlpha = 0.10;
+  ctx.globalAlpha = 0.055;
   ctx.strokeStyle = th.wall;
   ctx.lineWidth = 2;
   ctx.rotate(now * 0.04);
@@ -332,7 +402,7 @@ function drawBackground() {
 
   // subtle pathing grid, softened so the realms read as natural terrain first
   ctx.save();
-  ctx.globalAlpha = 0.45;
+  ctx.globalAlpha = 0.26;
   ctx.strokeStyle = th.grid;
   ctx.lineWidth = 1;
   for (let x = WALL; x <= W - WALL; x += 64) { ctx.beginPath(); ctx.moveTo(x, WALL); ctx.lineTo(x, H - WALL); ctx.stroke(); }
