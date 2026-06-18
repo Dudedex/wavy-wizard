@@ -1310,7 +1310,7 @@ function updateFountains(dt) {
       f.drain = (f.drain || 0) + dt;
       if (f.drain >= 1.34) consumeFountain(f);
     } else {
-      f.drain = Math.max(0, (f.drain || 0) - dt * 1.5); // refill slowly if you step away
+      f.drain = Math.max(0, (f.drain || 0) - dt * 1.0); // refill slowly if you step away
     }
   }
   game.fountains = game.fountains.filter(f => !f.used);
@@ -1371,7 +1371,7 @@ function updateWorldSpawns(dt) {
         ws.prog += dt;
         if (ws.prog >= 3.35) { grantMineItem(ws); ws.used = true; }
       } else {
-        ws.prog = Math.max(0, ws.prog - dt * 0.5); // slowly lose progress if you step off
+        ws.prog = Math.max(0, ws.prog - dt * 0.333); // slowly lose progress if you step off
       }
     }
   }
@@ -2885,17 +2885,34 @@ function render() {
   for (const e of game.enemies) {
     if (!e.chargeTele || e.windup <= 0 || e.dead) continue;
     const pulse = 0.5 + Math.sin(performance.now() / 80) * 0.5;
+    const tele = e.chargeTele;
     ctx.save();
     ctx.globalAlpha = 0.35 + pulse * 0.35;
-    ctx.strokeStyle = '#ff3344';
+    ctx.strokeStyle = tele.color || '#ff3344';
     ctx.lineWidth = (e.boss ? 12 : 7) * (game.opt.bigTele ? 1.35 : 1);
     ctx.setLineDash([14, 9]);
     ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(e.chargeTele.x1, e.chargeTele.y1); ctx.lineTo(e.chargeTele.x2, e.chargeTele.y2); ctx.stroke();
+    if (tele.type === 'circle') {
+      ctx.beginPath(); ctx.arc(tele.x, tele.y, tele.r, 0, Math.PI * 2); ctx.stroke();
+    } else if (tele.type === 'zigzag' && tele.points && tele.points.length) {
+      ctx.beginPath(); ctx.moveTo(tele.points[0].x, tele.points[0].y);
+      for (let i = 1; i < tele.points.length; i++) ctx.lineTo(tele.points[i].x, tele.points[i].y);
+      ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.moveTo(tele.x1, tele.y1); ctx.lineTo(tele.x2, tele.y2); ctx.stroke();
+    }
     ctx.setLineDash([]);
     ctx.globalAlpha = 0.12;
     ctx.lineWidth += 12;
-    ctx.beginPath(); ctx.moveTo(e.chargeTele.x1, e.chargeTele.y1); ctx.lineTo(e.chargeTele.x2, e.chargeTele.y2); ctx.stroke();
+    if (tele.type === 'circle') {
+      ctx.beginPath(); ctx.arc(tele.x, tele.y, tele.r, 0, Math.PI * 2); ctx.stroke();
+    } else if (tele.type === 'zigzag' && tele.points && tele.points.length) {
+      ctx.beginPath(); ctx.moveTo(tele.points[0].x, tele.points[0].y);
+      for (let i = 1; i < tele.points.length; i++) ctx.lineTo(tele.points[i].x, tele.points[i].y);
+      ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.moveTo(tele.x1, tele.y1); ctx.lineTo(tele.x2, tele.y2); ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -3050,6 +3067,25 @@ function render() {
   // enemies
   for (const e of game.enemies) {
     const wob = Math.sin(e.wobble) * 0.08 + 1;
+    if (e.bloodhungry) {
+      const pulse = 0.5 + Math.sin(performance.now() / 120 + e.wobble) * 0.5;
+      const auraR = e.r + 10 + pulse * 5;
+      ctx.save();
+      ctx.globalAlpha = 0.22 + pulse * 0.18;
+      ctx.fillStyle = '#ff3344';
+      ctx.beginPath(); ctx.arc(e.x, e.y, auraR, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.75;
+      ctx.strokeStyle = '#ff6b2f';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([7, 5]);
+      ctx.beginPath(); ctx.arc(e.x, e.y, auraR + 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#ffd454';
+      ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`PACK x${e.packCount || 6}`, e.x, e.y + e.r + 22);
+      ctx.restore();
+    }
     ctx.save();
     ctx.translate(e.x, e.y);
     ctx.scale(wob, 2 - wob);
@@ -3314,8 +3350,10 @@ function render() {
   // particles
   for (const pt of game.particles) {
     ctx.globalAlpha = 1 - pt.t / pt.dur;
-    ctx.fillStyle = pt.color;
-    ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff3344';
+    ctx.strokeStyle = '#05060a';
+    ctx.lineWidth = 1.25;
+    ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   }
   ctx.globalAlpha = 1;
 

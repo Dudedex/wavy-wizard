@@ -43,11 +43,11 @@ function comboForWave(w) {
 
 function waveScale(wave) {
   // Wave 1 uses authored base stats (Green Ghost: 5 HP / 3 damage).
-  // Later waves scale more deliberately so spell damage can be balanced around
-  // a 25-damage single-target baseline.
+  // HP starts a little softer for the first shops, then curves harder in
+  // longer runs so mature builds do not outscale enemy health as quickly.
   const w = wave - 1;
   return {
-    hp: Math.pow(1.16, w),
+    hp: Math.pow(1.105, w) * (1 + 0.006 * w * w),
     dmg: 1 + 0.055 * w + 0.0016 * w * w,
     spd: (1 + 0.018 * w + 0.0014 * w * w) * 0.95,
   };
@@ -132,8 +132,8 @@ function updateSpawning(dt) {
   }
 
   game.spawnTimer -= dt;
-  let interval = Math.max(0.35, 1.25 - wave * 0.05);
-  let maxAlive = 12 + wave * 2;
+  let interval = Math.max(0.35, 1.35 - wave * 0.045);
+  let maxAlive = 10 + wave * 2;
   let batch = 1 + Math.floor(wave / 6);
   if (horde) {
     // swarm pacing: way more, way faster
@@ -163,7 +163,7 @@ function updateSpawning(dt) {
     const combo = comboForWave(wave);
     if (combo && COMBOS[combo]) pool = COMBOS[combo].pool;
     // Swarm Nest modifier floods the arena with bats and sparks (overrides combos)
-    if (game.modSwarm) pool = [['bat', 8], ['spark', 6], ['blob', 2]];
+    if (game.modSwarm) pool = [['bat', 6], ['yellowbat', 3], ['redbat', 2], ['spark', 6], ['blob', 2]];
     for (let i = 0; i < batch; i++) queueSpawn(weightedPick(pool));
   }
 }
@@ -171,10 +171,43 @@ function updateSpawning(dt) {
 // Schedules an ability when its timer runs out (wind-up phase, or instant effect).
 function startEnemyAbility(e, p, d) {
   switch (e.type) {
-    case 'bat': // telegraphed lunge at the player
-      if (d > 70 && d < 340) { e.windup = 0.45; e.pending = 'lunge'; }
+    case 'bat': // purple bat: straight charge after a 1s lane indicator
+      if (d > 70 && d < 380) {
+        e.windup = 1.0; e.pending = 'batStraight';
+        e.chargeX = (p.x - e.x) / d; e.chargeY = (p.y - e.y) / d;
+        e.chargeTele = { type: 'line', color: e.color, x1: e.x, y1: e.y, x2: clamp(e.x + e.chargeX * 420, WALL + 20, W - WALL - 20), y2: clamp(e.y + e.chargeY * 420, WALL + 20, H - WALL - 20), t: e.windup };
+      }
       else e.abilityT = 0.8;
       break;
+    case 'yellowbat': { // yellow bat: zig-zag charge after a 1s path indicator
+      if (d > 80 && d < 420) {
+        e.windup = 1.0; e.pending = 'batZigzag';
+        e.chargeX = (p.x - e.x) / d; e.chargeY = (p.y - e.y) / d;
+        const px = -e.chargeY, py = e.chargeX;
+        const pts = [];
+        for (let i = 0; i <= 6; i++) {
+          const along = i * 62;
+          const side = (i % 2 === 0 ? -1 : 1) * 34;
+          pts.push({
+            x: clamp(e.x + e.chargeX * along + px * side, WALL + 20, W - WALL - 20),
+            y: clamp(e.y + e.chargeY * along + py * side, WALL + 20, H - WALL - 20),
+          });
+        }
+        pts[0] = { x: e.x, y: e.y };
+        e.chargeTele = { type: 'zigzag', color: e.color, points: pts, t: e.windup };
+      } else e.abilityT = 0.8;
+      break;
+    }
+    case 'redbat': { // red bat: circular charge after a 1s ring indicator
+      if (d > 80 && d < 460) {
+        e.windup = 1.0; e.pending = 'batCircle';
+        const a = Math.atan2(e.y - p.y, e.x - p.x);
+        e.chargeCX = p.x; e.chargeCY = p.y; e.chargeRadius = clamp(d, 95, 150);
+        e.chargeDir = Math.random() < 0.5 ? -1 : 1;
+        e.chargeTele = { type: 'circle', color: e.color, x: p.x, y: p.y, r: e.chargeRadius, a, dir: e.chargeDir, t: e.windup };
+      } else e.abilityT = 0.8;
+      break;
+    }
     case 'brute': { // wind up, then charge in a straight line
       if (d > 90 && d < 460) {
         e.windup = 0.7; e.pending = 'charge';
@@ -376,6 +409,12 @@ function triggerEnemyAbility(e, p, d) {
     e.kx = (p.x - e.x) / d * 460;
     e.ky = (p.y - e.y) / d * 460;
     e.abilityT = rand(3, 4.5);
+  } else if (e.pending === 'batStraight' || e.pending === 'batZigzag' || e.pending === 'batCircle') {
+    e.charging = e.pending === 'batCircle' ? 1.1 : e.pending === 'batZigzag' ? 0.75 : 0.5;
+    e.chargeMode = e.pending;
+    e.chargeElapsed = 0;
+    e.chargeSpd = e.pending === 'batCircle' ? 420 : e.pending === 'batZigzag' ? 470 : 540;
+    e.abilityT = rand(3, 4.5);
   } else if (e.pending === 'charge') {
     e.charging = 0.55;
     e.chargeSpd = Math.max(320, e.spd * 5);
@@ -437,7 +476,10 @@ function updateEnemies(dt) {
       if (e.windup <= 0) triggerEnemyAbility(e, p, d);
     } else if (e.charging > 0) {
       e.charging -= dt;
-      if (e.charging <= 0) e.abilityT = e.boss ? rand(3, 4.5) : rand(5, 7);
+      if (e.charging <= 0) {
+        e.chargeMode = null;
+        e.abilityT = e.type === 'bat' || e.type === 'yellowbat' || e.type === 'redbat' ? rand(3, 4.5) : e.boss ? rand(3, 4.5) : rand(5, 7);
+      }
     } else {
       e.abilityT -= dt;
       if (e.abilityT <= 0) startEnemyAbility(e, p, d);
@@ -496,13 +538,34 @@ function updateEnemies(dt) {
     let packCount = 0;
     for (const ally of game.enemies) if (!ally.dead && dist2(e.x, e.y, ally.x, ally.y) <= 115 * 115) packCount++;
     e.bloodhungry = packCount > 5;
+    e.packCount = packCount;
     if (e.bloodhungry) spd *= 1.15;
 
     // spitters keep shooting distance, shamans hide behind the horde
     if ((e.ranged && !e.boss && d < e.ranged.range * 0.6) || (e.shy && d < 250)) { mx = -mx; my = -my; }
     if (e.flee) { mx = -mx; my = -my; } // Gold Goblin always runs away
     if (e.windup > 0) { mx = 0; my = 0; } // rooted while winding up
-    if (e.charging > 0) { mx = e.chargeX; my = e.chargeY; spd = e.chargeSpd; }
+    if (e.charging > 0) {
+      e.chargeElapsed = (e.chargeElapsed || 0) + dt;
+      if (e.chargeMode === 'batZigzag') {
+        const side = Math.sin(e.chargeElapsed * 24) * 0.95;
+        mx = e.chargeX - e.chargeY * side;
+        my = e.chargeY + e.chargeX * side;
+        const mag = Math.max(0.001, Math.hypot(mx, my));
+        mx /= mag; my /= mag; spd = e.chargeSpd;
+      } else if (e.chargeMode === 'batCircle') {
+        const cx = e.chargeCX || p.x, cy = e.chargeCY || p.y;
+        const rx = e.x - cx, ry = e.y - cy;
+        const rd = Math.max(1, Math.hypot(rx, ry));
+        const radial = ((e.chargeRadius || 120) - rd) / Math.max(e.chargeRadius || 120, 1);
+        mx = (-ry / rd) * (e.chargeDir || 1) + (rx / rd) * radial * 1.6;
+        my = (rx / rd) * (e.chargeDir || 1) + (ry / rd) * radial * 1.6;
+        const mag = Math.max(0.001, Math.hypot(mx, my));
+        mx /= mag; my /= mag; spd = e.chargeSpd;
+      } else {
+        mx = e.chargeX; my = e.chargeY; spd = e.chargeSpd;
+      }
+    }
 
     const oldX = e.x, oldY = e.y;
     e.x += (mx * spd * slowFactor + e.kx) * dt;

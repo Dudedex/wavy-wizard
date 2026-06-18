@@ -178,7 +178,7 @@ const SHOP_EVENTS = {
 };
 
 function rerollCost() {
-  return Math.floor(game.wave * 0.8) + 1 + game.rerolls * 2;
+  return 5 * Math.pow(2, game.rerolls);
 }
 
 function openShop() {
