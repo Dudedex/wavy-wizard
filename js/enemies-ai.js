@@ -301,7 +301,7 @@ function startEnemyAbility(e, p, d) {
           const a0 = Math.atan2(p.y - e.y, p.x - e.x);
           for (let i = -3; i <= 3; i++) {
             const a = a0 + i * 0.16;
-            game.enemyProjectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, dmg: e.dmg * 0.7, r: 7, life: 5, color: '#cc88ff' });
+            game.enemyProjectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, dmg: e.dmg * 0.7, r: 7, life: 5, color: '#cc88ff', boss: true });
           }
           addText(e.x, e.y - e.r - 20, 'ARCANE FAN', '#cc88ff', 14);
         } else {
@@ -342,7 +342,7 @@ function startEnemyAbility(e, p, d) {
             game.enemyProjectiles.push({
               x: e.x + Math.cos(a) * 34, y: e.y + Math.sin(a) * 34,
               vx: Math.cos(a) * 120, vy: Math.sin(a) * 120,
-              dmg: Math.round(e.dmg * 0.6), r: 9, life: 6, color: '#ff88dd', homing: 2.6,
+              dmg: Math.round(e.dmg * 0.6), r: 9, life: 6, color: '#ff88dd', homing: 2.6, boss: true,
             });
           }
           addText(e.x, e.y - e.r - 20, 'SEEKERS', '#ff88dd', 14);
@@ -428,7 +428,7 @@ function triggerEnemyAbility(e, p, d) {
       const a = (Math.PI * 2 * i) / n + rand(-0.05, 0.05);
       game.enemyProjectiles.push({
         x: e.x, y: e.y, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130,
-        dmg: e.dmg * 0.8, r: 6, life: 6, color: '#ff5577',
+        dmg: e.dmg * 0.8, r: 6, life: 6, color: '#ff5577', boss: !!e.boss,
       });
     }
     sfx('zap');
@@ -527,7 +527,7 @@ function updateEnemies(dt) {
           const a = e.spiral.ang + k * (Math.PI * 2 / 3);
           game.enemyProjectiles.push({
             x: e.x, y: e.y, vx: Math.cos(a) * 175, vy: Math.sin(a) * 175,
-            dmg: Math.round(e.dmg * 0.5), r: 6, life: 5, color: '#cc88ff',
+            dmg: Math.round(e.dmg * 0.5), r: 6, life: 5, color: '#cc88ff', boss: !!e.boss,
           });
         }
         sfx('zap');
@@ -604,7 +604,7 @@ function updateEnemies(dt) {
             const a = (Math.PI * 2 * i) / n + rand(-0.1, 0.1);
             game.enemyProjectiles.push({
               x: e.x, y: e.y, vx: Math.cos(a) * e.ranged.projSpd, vy: Math.sin(a) * e.ranged.projSpd,
-              dmg: e.ranged.dmg, r: 7, life: 5, color: '#cc88ff',
+              dmg: e.ranged.dmg, r: 7, life: 5, color: '#cc88ff', boss: true,
             });
           }
           sfx('zap');
@@ -615,7 +615,7 @@ function updateEnemies(dt) {
           for (const off of spread) {
             game.enemyProjectiles.push({
               x: e.x, y: e.y, vx: Math.cos(a + off) * e.ranged.projSpd, vy: Math.sin(a + off) * e.ranged.projSpd,
-              dmg: e.ranged.dmg, r: 5, life: 4, color: '#ffe96b',
+              dmg: e.ranged.dmg, r: 5, life: 4, color: '#ffe96b', boss: !!e.boss,
             });
           }
         }

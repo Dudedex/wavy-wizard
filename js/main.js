@@ -534,7 +534,8 @@ function nearbyEnemyCount(x, y, radius) {
   return n;
 }
 
-function damagePlayer(rawDmg, src, target) {
+function damagePlayer(rawDmg, src, target, opts) {
+  opts = opts || {};
   const p = target || game.player;
   if (p.downed || p.invuln > 0 || game.state !== 'playing') return;
   const st = p.stats;
@@ -542,7 +543,7 @@ function damagePlayer(rawDmg, src, target) {
   // Duelist Robe: bonus armor when outnumbered is low. Glass Arena: more dmg taken.
   let armor = st.armor + 2 * game.elem.earth + (p.bonusArmor || 0); // Earth meta + temp wards
   if (st.duelist && nearbyEnemyCount(p.x, p.y, 300) < 5) armor += st.duelist;
-  let dmg = Math.max(1, Math.round(rawDmg * (game.modDmgTaken || 1) - armor));
+  let dmg = Math.max(opts.minDmg || 1, Math.round(rawDmg * (game.modDmgTaken || 1) - armor));
   if (p.shield > 0) {
     const absorbed = Math.min(p.shield, dmg);
     p.shield -= absorbed;
@@ -1158,7 +1159,7 @@ function updateEnemyProjectiles(dt) {
     if (pr.life <= 0 || pr.x < WALL || pr.x > W - WALL || pr.y < WALL || pr.y > H - WALL) { pr.dead = true; continue; }
     for (const b of livePlayers()) {
       if (dist2(pr.x, pr.y, b.x, b.y) <= (pr.r + b.r) ** 2) {
-        damagePlayer(pr.dmg, 'enemy spellfire', b);
+        damagePlayer(pr.dmg, 'enemy spellfire', b, { minDmg: pr.boss ? 5 : 3 });
         pr.dead = true;
         break;
       }

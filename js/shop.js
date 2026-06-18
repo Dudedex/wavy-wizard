@@ -189,6 +189,16 @@ function openShop() {
   saveRun(); // between-wave checkpoint
 }
 
+function refreshShopIfRoundBoughtOut() {
+  const roundOffers = game.shopOffers.slice(0, 4);
+  if (roundOffers.length === 4 && roundOffers.every(o => o.sold)) {
+    game.shopOffers = [];
+    generateShop();
+    addText(game.player.x, game.player.y - 46, 'Free reroll — new stock!', '#ffd454', 18);
+    sfx('shopReroll');
+  }
+}
+
 function offerPrice(offer) {
   if (offer.kind === 'event' || offer.kind === 'lastresort') return 0; // these price themselves
   // spell prices climb with the wave too (items already scale via itemPrice);
@@ -286,7 +296,7 @@ function renderShop() {
       btn.className = 'buy-btn legendary-btn';
       btn.textContent = ev.label(game);
       btn.disabled = !ev.can(game);
-      btn.onclick = () => { ev.act(game); game.shopOffers[idx] = rollOffer(); sfx(ev.debt ? 'shopLegendary' : 'shopBuy'); renderShop(); saveRun(); };
+      btn.onclick = () => { ev.act(game); offer.sold = true; sfx(ev.debt ? 'shopLegendary' : 'shopBuy'); refreshShopIfRoundBoughtOut(); renderShop(); saveRun(); };
       card.appendChild(btn);
       row.appendChild(card);
       return;
@@ -312,15 +322,15 @@ function renderShop() {
       };
       mkBtn(`Restore — ${restoreCost}g`, game.gold < restoreCost, () => {
         game.gold -= restoreCost; p.lastResort = true; p.lastResortType = 'basic';
-        offer.sold = true; sfx('shopLegendary'); addText(p.x, p.y - 40, 'Last Resort restored!', '#ffd454', 20); renderShop(); saveRun();
+        offer.sold = true; sfx('shopLegendary'); addText(p.x, p.y - 40, 'Last Resort restored!', '#ffd454', 20); refreshShopIfRoundBoughtOut(); renderShop(); saveRun();
       });
       mkBtn(`${up.icon} Upgrade — ${upCost}g`, game.gold < upCost, () => {
         game.gold -= upCost; p.lastResort = true; p.lastResortType = offer.up;
-        offer.sold = true; sfx('shopLegendary'); addText(p.x, p.y - 40, `${up.name}!`, up.color, 20); renderShop(); saveRun();
+        offer.sold = true; sfx('shopLegendary'); addText(p.x, p.y - 40, `${up.name}!`, up.color, 20); refreshShopIfRoundBoughtOut(); renderShop(); saveRun();
       });
       mkBtn('Sacrifice → +25% dmg', false, () => {
         p.stats.dmgMult += 0.25; p.lastResortSacrificed = true; p.lastResort = false;
-        offer.sold = true; sfx('shopSell'); addText(p.x, p.y - 40, 'Last Resort sacrificed — +25% damage', '#ff5577', 18); renderShop(); saveRun();
+        offer.sold = true; sfx('shopSell'); addText(p.x, p.y - 40, 'Last Resort sacrificed — +25% damage', '#ff5577', 18); refreshShopIfRoundBoughtOut(); renderShop(); saveRun();
       });
       row.appendChild(card);
       return;
@@ -711,9 +721,10 @@ function buyOffer(idx, fuse) {
   }
   game.gold -= price;
   if (game.discountBuys > 0) game.discountBuys--; // Cursed Discount: spend a cheap purchase
-  game.shopOffers[idx] = rollOffer();
+  offer.sold = true;
   if (offer.kind === 'spell' && !fuse) sfx('shopSpell');
   else if (offer.kind === 'item') sfx('shopBuy');
+  refreshShopIfRoundBoughtOut();
   renderShop();
   saveRun();
 }
