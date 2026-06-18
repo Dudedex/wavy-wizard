@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wavy Wizard Enemy Asset Preview</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 50% 20%, #18223a 0, #09111f 44%, #05070d 100%);
+      color: #eaf2ff;
+      font: 14px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header { padding: 18px 24px 8px; }
+    h1 { margin: 0 0 4px; font-size: 22px; }
+    p { margin: 0; color: #9fb0c8; }
+    nav { padding: 0 24px; }
+    a { color: #8be0ff; }
+    canvas {
+      display: block;
+      width: min(1180px, calc(100vw - 32px));
+      height: auto;
+      margin: 16px auto 24px;
+      border: 1px solid rgba(143, 168, 255, 0.28);
+      border-radius: 16px;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+      background: rgba(6, 10, 18, 0.72);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Enemy Asset Preview</h1>
+    <p>Procedural enemy sprites with movement wobble, ambient particles, and role-specific detail overlays.</p>
+  </header>
+  <nav><a href="asset-previews.html">All previews</a></nav>
+  <canvas id="preview" width="1180" height="760" aria-label="Enemy asset preview grid"></canvas>
+
+  <script src="js/data/enemies.js"></script>
+  <script src="js/render/shades.js"></script>
+  <script>
+    'use strict';
+
+    const canvas = document.getElementById('preview');
+    const ctx = canvas.getContext('2d');
+    const types = Object.keys(ENEMY_TYPES);
+    const start = performance.now();
+
+    function drawGrid(time) {
+      const t = (time - start) / 1000;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const cols = 5;
+      const cellW = canvas.width / cols;
+      const cellH = 178;
+
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '12px system-ui, sans-serif';
+
+      types.forEach((type, i) => {
+        const def = ENEMY_TYPES[type];
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = cellW * col + cellW / 2;
+        const y = 92 + row * cellH;
+        const pulse = Math.sin(t * 2.6 + i) * 0.5 + 0.5;
+        const e = {
+          ...def,
+          type,
+          x,
+          y,
+          r: def.r,
+          color: def.color,
+          wobble: t * 6 + i * 0.55,
+          vx: Math.cos(t + i) * def.spd,
+          vy: Math.sin(t * 0.7 + i) * def.spd,
+          windup: def.bomber ? pulse : 0,
+          ranged: def.ranged || null,
+          flee: !!def.flee,
+          drainShield: !!def.drainShield,
+          warden: !!def.warden,
+          mirror: !!def.mirror,
+          nuller: !!def.nuller,
+          elite: !!def.elite,
+          boss: !!def.boss,
+        };
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(143, 168, 255, 0.08)';
+        ctx.strokeStyle = 'rgba(143, 168, 255, 0.16)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(cellW * col + 14, row * cellH + 18, cellW - 28, cellH - 30, 14);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.translate(x, y);
+        const scale = def.boss ? 1.1 : def.elite ? 1.05 : 1.65;
+        ctx.scale(scale, scale);
+        drawShade(ctx, e, e.r, e.color, Math.cos(t * 0.9 + i) < 0 ? -1 : 1);
+        ctx.restore();
+
+        ctx.fillStyle = '#eaf2ff';
+        ctx.font = 'bold 15px system-ui, sans-serif';
+        ctx.fillText(def.name, x, y + 58);
+        ctx.fillStyle = '#9fb0c8';
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.fillText(type, x, y + 78);
+      });
+
+      ctx.restore();
+      requestAnimationFrame(drawGrid);
+    }
+
+    requestAnimationFrame(drawGrid);
+  </script>
+</body>
+</html>
