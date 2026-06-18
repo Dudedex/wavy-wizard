@@ -2943,24 +2943,24 @@ function render() {
     const fade = c.t < 0.3 ? c.t / 0.3 : c.t > c.dur - 0.5 ? (c.dur - c.t) / 0.5 : 1;
     const now = performance.now() / 1000;
     if (c.fire) {
-      ctx.fillStyle = `rgba(255, 140, 60, ${0.18 * fade})`;
+      ctx.fillStyle = `rgba(255, 140, 60, ${0.10 * fade})`;
       ctx.beginPath(); ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = `rgba(255, 170, 70, ${0.55 * fade})`;
+      ctx.strokeStyle = `rgba(255, 170, 70, ${0.32 * fade})`;
       ctx.lineWidth = 2; ctx.stroke();
     } else {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = `rgba(120, 210, 75, ${0.12 * fade})`;
+      ctx.fillStyle = `rgba(120, 210, 75, ${0.07 * fade})`;
       ctx.beginPath(); ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2); ctx.fill();
       for (let i = 0; i < 9; i++) {
         const a = i * Math.PI * 2 / 9 + now * 0.25;
         const rr = c.radius * (0.18 + (i % 3) * 0.18);
         const px = c.x + Math.cos(a) * rr;
         const py = c.y + Math.sin(a * 1.2) * rr * 0.62;
-        ctx.fillStyle = `rgba(155, 224, 90, ${0.18 * fade})`;
+        ctx.fillStyle = `rgba(155, 224, 90, ${0.10 * fade})`;
         ctx.beginPath(); ctx.ellipse(px, py, c.radius * 0.28, c.radius * 0.18, a, 0, Math.PI * 2); ctx.fill();
       }
-      ctx.strokeStyle = `rgba(155, 224, 90, ${0.55 * fade})`;
+      ctx.strokeStyle = `rgba(155, 224, 90, ${0.30 * fade})`;
       ctx.setLineDash([5, 8]); ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(c.x, c.y, c.radius * (0.92 + Math.sin(now * 2 + c.x) * 0.04), 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]); ctx.restore();
@@ -3077,10 +3077,10 @@ function render() {
   // meteor telegraphs (friendly: solid cyan ring — safe for you to stand in)
   for (const m of game.meteors) {
     const prog = m.t / m.delay;
-    ctx.strokeStyle = `rgba(123, 225, 255, ${0.5 + prog * 0.4})`;
+    ctx.strokeStyle = `rgba(123, 225, 255, ${0.28 + prog * 0.24})`;
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = `rgba(255, 107, 74, ${0.12 + prog * 0.2})`;
+    ctx.fillStyle = `rgba(255, 107, 74, ${0.07 + prog * 0.12})`;
     ctx.beginPath(); ctx.arc(m.x, m.y, m.radius * prog, 0, Math.PI * 2); ctx.fill();
     // falling fire meteor: hot rock with flame trail
     const fy = m.y - (1 - prog) * 420;
@@ -3429,15 +3429,15 @@ function render() {
     for (let i = 0; i < 4; i++) {
       const u = (prog + i * 0.18) % 1;
       const rr = c.range * u;
-      ctx.globalAlpha = fade * (0.65 - i * 0.1);
+      ctx.globalAlpha = fade * (0.38 - i * 0.06);
       ctx.strokeStyle = c.color;
       ctx.lineWidth = 8 * (1 - u) + 1.5;
       ctx.beginPath(); ctx.arc(0, 0, rr, -c.half, c.half); ctx.stroke();
     }
     const g2 = ctx.createLinearGradient(0, 0, c.range, 0);
-    g2.addColorStop(0, colorWithAlpha(c.color, 0.22 * fade));
+    g2.addColorStop(0, colorWithAlpha(c.color, 0.12 * fade));
     g2.addColorStop(1, colorWithAlpha(c.color, 0));
-    ctx.fillStyle = g2; ctx.globalAlpha = 0.6 * fade;
+    ctx.fillStyle = g2; ctx.globalAlpha = 0.34 * fade;
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, c.range, -c.half, c.half); ctx.closePath(); ctx.fill();
     ctx.restore();
     ctx.globalAlpha = 1;
@@ -3468,7 +3468,7 @@ function render() {
   // nova rings (player nova, explosions, heal pulses, slams)
   for (const n of game.novas) {
     const prog = n.t / n.dur;
-    ctx.globalAlpha = 1 - prog;
+    ctx.globalAlpha = (1 - prog) * 0.55;
     ctx.strokeStyle = n.color || '#fff3b0';
     ctx.lineWidth = 5 * (1 - prog) + 1;
     ctx.beginPath(); ctx.arc(n.x, n.y, n.radius * prog, 0, Math.PI * 2); ctx.stroke();

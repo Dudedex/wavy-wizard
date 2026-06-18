@@ -165,6 +165,11 @@ function updateSpawning(dt) {
   interval *= 1 - 0.45 * prog;
   maxAlive = Math.round(maxAlive * (1 + 0.7 * prog));
   if (prog > 0.5) batch += 1;
+  if (wave >= 16 && wave <= 20) {
+    interval *= 0.8;
+    maxAlive = Math.round(maxAlive * 1.35);
+    batch += 1;
+  }
 
   if (game.spawnTimer <= 0 && liveEnemies().length + game.spawns.length < maxAlive) {
     game.spawnTimer = interval;
@@ -185,7 +190,10 @@ function startEnemyAbility(e, p, d) {
       if (d > 70 && d < 505) {
         e.windup = 1.0; e.pending = 'batStraight';
         e.chargeX = (p.x - e.x) / d; e.chargeY = (p.y - e.y) / d;
-        e.chargeTele = { type: 'line', color: e.color, x1: e.x, y1: e.y, x2: clamp(e.x + e.chargeX * 560, WALL + 20, W - WALL - 20), y2: clamp(e.y + e.chargeY * 560, WALL + 20, H - WALL - 20), t: e.windup };
+        const x2 = clamp(e.x + e.chargeX * 560, WALL + 20, W - WALL - 20);
+        const y2 = clamp(e.y + e.chargeY * 560, WALL + 20, H - WALL - 20);
+        e.chargeDuration = Math.hypot(x2 - e.x, y2 - e.y) / 720;
+        e.chargeTele = { type: 'line', color: '#ff3344', x1: e.x, y1: e.y, x2, y2, t: e.windup };
       }
       else e.abilityT = 0.55;
       break;
@@ -204,7 +212,8 @@ function startEnemyAbility(e, p, d) {
           });
         }
         pts[0] = { x: e.x, y: e.y };
-        e.chargeTele = { type: 'zigzag', color: e.color, points: pts, t: e.windup };
+        e.chargeDuration = pts.slice(1).reduce((sum, pt, i) => sum + Math.hypot(pt.x - pts[i].x, pt.y - pts[i].y), 0) / 625;
+        e.chargeTele = { type: 'zigzag', color: '#ff3344', points: pts, t: e.windup };
       } else e.abilityT = 0.55;
       break;
     }
@@ -214,7 +223,8 @@ function startEnemyAbility(e, p, d) {
         const a = Math.atan2(e.y - p.y, e.x - p.x);
         e.chargeCX = p.x; e.chargeCY = p.y; e.chargeRadius = clamp(d, 125, 200);
         e.chargeDir = Math.random() < 0.5 ? -1 : 1;
-        e.chargeTele = { type: 'circle', color: e.color, x: p.x, y: p.y, r: e.chargeRadius, a, dir: e.chargeDir, t: e.windup };
+        e.chargeDuration = Math.PI * 2 * e.chargeRadius / 560;
+        e.chargeTele = { type: 'circle', color: '#ff3344', x: p.x, y: p.y, r: e.chargeRadius, a, dir: e.chargeDir, t: e.windup };
       } else e.abilityT = 0.55;
       break;
     }
@@ -423,10 +433,10 @@ function triggerEnemyAbility(e, p, d) {
     e.ky = (p.y - e.y) / d * 460;
     e.abilityT = rand(3, 4.5);
   } else if (e.pending === 'batStraight' || e.pending === 'batZigzag' || e.pending === 'batCircle') {
-    e.charging = e.pending === 'batCircle' ? 1.1 : e.pending === 'batZigzag' ? 0.75 : 0.5;
     e.chargeMode = e.pending;
     e.chargeElapsed = 0;
     e.chargeSpd = e.pending === 'batCircle' ? 560 : e.pending === 'batZigzag' ? 625 : 720;
+    e.charging = e.chargeDuration || (e.pending === 'batCircle' ? 1.1 : e.pending === 'batZigzag' ? 0.75 : 0.5);
     e.abilityT = rand(2.25, 3.4);
   } else if (e.pending === 'charge') {
     e.charging = 0.55;

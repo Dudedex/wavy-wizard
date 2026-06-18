@@ -76,7 +76,7 @@ function displayTier(id, tier, variantKey) {
   if (variantKey && VARIANTS[variantKey] && VARIANTS[variantKey].mod) { t = { ...t }; VARIANTS[variantKey].mod(t); }
   return t;
 }
-function sameSpell(a, b) { return a.id === b.id && a.tier === b.tier && (a.variant || null) === (b.variant || null); }
+function sameSpell(a, b) { return a.id === b.id && a.tier === b.tier; }
 
 // Duplicates are always purchasable now (fusion), so locks never go stale.
 function offerStillValid() { return true; }
@@ -681,9 +681,10 @@ function buyOffer(idx, fuse) {
 
   if (offer.kind === 'spell') {
     if (fuse) {
-      // buy & fuse: upgrade an owned same-tier (+ same variant) copy directly
+      // buy & fuse: upgrade an owned same-tier copy directly; variants are preserved/merged.
       const owned = p.spells.find(s => sameSpell(s, offer) && s.tier < 3);
       if (!owned) { sfx('shopDeny'); return; }
+      owned.variant = owned.variant || offer.variant;
       owned.tier++;
       owned.t = 0;
       if (p.stats.collector) owned.fuseBonus = (owned.fuseBonus || 0) + 0.15; // Collector: fused spell hits harder
@@ -743,6 +744,7 @@ function sellSpell(i) {
 }
 
 // Merge two copies of the same spell (same tier) into one copy a tier higher.
+// Variant + normal fusion keeps the resulting spell variant.
 function fuseSpells(i, j) {
   const p = game.player;
   const a = p.spells[i], b = p.spells[j];
@@ -754,6 +756,7 @@ function fuseSpells(i, j) {
     game.gold -= cost;
     a.fuseBonus = (a.fuseBonus || 0) + 0.15; // …but the fused spell hits harder
   }
+  a.variant = a.variant || b.variant;
   a.tier++;
   a.t = 0;
   p.spells.splice(j, 1);
