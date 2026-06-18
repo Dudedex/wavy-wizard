@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 // Enemies & waves
 // ---------------------------------------------------------------------------
-// Milestone waves: horde waves swarm you, boss waves end when every boss dies.
+// Milestone waves: horde waves swarm you, boss waves last the full timer.
 // Past wave 20 (endless mode) the milestones repeat on a 5-wave cycle.
 const BOSS_WAVES = { 10: 1, 15: 1, 20: 2 };
 const HORDE_WAVES = [5, 15];
@@ -43,11 +43,11 @@ function comboForWave(w) {
 
 function waveScale(wave) {
   // Wave 1 uses authored base stats (Green Ghost: 5 HP / 3 damage).
-  // Later waves scale more deliberately so spell damage can be balanced around
-  // a 25-damage single-target baseline.
+  // HP starts a little softer for the first shops, then curves harder in
+  // longer runs so mature builds do not outscale enemy health as quickly.
   const w = wave - 1;
   return {
-    hp: Math.pow(1.16, w),
+    hp: Math.pow(1.105, w) * (1 + 0.006 * w * w),
     dmg: 1 + 0.055 * w + 0.0016 * w * w,
     spd: (1 + 0.018 * w + 0.0014 * w * w) * 0.95,
   };
@@ -69,7 +69,7 @@ function spawnEnemy(type, x, y, opts) {
     splitsInto: def.splitsInto || null,
     elite: !!def.elite, boss: !!def.boss, shy: !!def.shy,
     flee: !!def.flee, drainShield: !!def.drainShield, warden: !!def.warden,
-    mirror: !!def.mirror, nuller: !!def.nuller,
+    mirror: !!def.mirror, nuller: !!def.nuller, laserEye: !!def.laserEye,
     bomber: !!def.bomber, blastR: def.blastR || 0, fuse: def.fuse || 0,
     reflect: 0, fleeT: def.flee ? 13 : 0,
     variant: opts.variant || null,
@@ -79,8 +79,18 @@ function spawnEnemy(type, x, y, opts) {
     wobble: rand(0, Math.PI * 2),
     dead: false,
   };
+  if (e.laserEye) {
+    e.borderSide = pick(['top', 'right', 'bottom', 'left']);
+    e.borderDir = Math.random() < 0.5 ? -1 : 1;
+    if (e.borderSide === 'top') e.y = WALL + e.r;
+    else if (e.borderSide === 'bottom') e.y = H - WALL - e.r;
+    else if (e.borderSide === 'left') e.x = WALL + e.r;
+    else e.x = W - WALL - e.r;
+  }
   // the 'charger' twin trades its radial bursts for melee pressure
   if (e.boss && e.variant === 'charger') e.ranged = null;
+  // Bats should threaten charges earlier than other ability users.
+  if (type === 'bat' || type === 'yellowbat' || type === 'redbat') e.abilityT = rand(1, 2.5);
   // Danger 10: the Archlich rises pre-shielded.
   if (e.boss && game.danger >= 10) { e.eshield = Math.round(e.maxHp * 0.4); }
   game.enemies.push(e);
@@ -132,8 +142,8 @@ function updateSpawning(dt) {
   }
 
   game.spawnTimer -= dt;
-  let interval = Math.max(0.35, 1.25 - wave * 0.05);
-  let maxAlive = 12 + wave * 2;
+  let interval = Math.max(0.35, 1.35 - wave * 0.045);
+  let maxAlive = 10 + wave * 2;
   let batch = 1 + Math.floor(wave / 6);
   if (horde) {
     // swarm pacing: way more, way faster
@@ -163,7 +173,7 @@ function updateSpawning(dt) {
     const combo = comboForWave(wave);
     if (combo && COMBOS[combo]) pool = COMBOS[combo].pool;
     // Swarm Nest modifier floods the arena with bats and sparks (overrides combos)
-    if (game.modSwarm) pool = [['bat', 8], ['spark', 6], ['blob', 2]];
+    if (game.modSwarm) pool = [['bat', 6], ['yellowbat', 3], ['redbat', 2], ['spark', 6], ['blob', 2]];
     for (let i = 0; i < batch; i++) queueSpawn(weightedPick(pool));
   }
 }
@@ -171,10 +181,43 @@ function updateSpawning(dt) {
 // Schedules an ability when its timer runs out (wind-up phase, or instant effect).
 function startEnemyAbility(e, p, d) {
   switch (e.type) {
-    case 'bat': // telegraphed lunge at the player
-      if (d > 70 && d < 340) { e.windup = 0.45; e.pending = 'lunge'; }
-      else e.abilityT = 0.8;
+    case 'bat': // purple bat: straight charge after a 1s lane indicator
+      if (d > 70 && d < 505) {
+        e.windup = 1.0; e.pending = 'batStraight';
+        e.chargeX = (p.x - e.x) / d; e.chargeY = (p.y - e.y) / d;
+        e.chargeTele = { type: 'line', color: e.color, x1: e.x, y1: e.y, x2: clamp(e.x + e.chargeX * 560, WALL + 20, W - WALL - 20), y2: clamp(e.y + e.chargeY * 560, WALL + 20, H - WALL - 20), t: e.windup };
+      }
+      else e.abilityT = 0.55;
       break;
+    case 'yellowbat': { // yellow bat: zig-zag charge after a 1s path indicator
+      if (d > 80 && d < 560) {
+        e.windup = 1.0; e.pending = 'batZigzag';
+        e.chargeX = (p.x - e.x) / d; e.chargeY = (p.y - e.y) / d;
+        const px = -e.chargeY, py = e.chargeX;
+        const pts = [];
+        for (let i = 0; i <= 6; i++) {
+          const along = i * 83;
+          const side = (i % 2 === 0 ? -1 : 1) * 45;
+          pts.push({
+            x: clamp(e.x + e.chargeX * along + px * side, WALL + 20, W - WALL - 20),
+            y: clamp(e.y + e.chargeY * along + py * side, WALL + 20, H - WALL - 20),
+          });
+        }
+        pts[0] = { x: e.x, y: e.y };
+        e.chargeTele = { type: 'zigzag', color: e.color, points: pts, t: e.windup };
+      } else e.abilityT = 0.55;
+      break;
+    }
+    case 'redbat': { // red bat: circular charge after a 1s ring indicator
+      if (d > 80 && d < 610) {
+        e.windup = 1.0; e.pending = 'batCircle';
+        const a = Math.atan2(e.y - p.y, e.x - p.x);
+        e.chargeCX = p.x; e.chargeCY = p.y; e.chargeRadius = clamp(d, 125, 200);
+        e.chargeDir = Math.random() < 0.5 ? -1 : 1;
+        e.chargeTele = { type: 'circle', color: e.color, x: p.x, y: p.y, r: e.chargeRadius, a, dir: e.chargeDir, t: e.windup };
+      } else e.abilityT = 0.55;
+      break;
+    }
     case 'brute': { // wind up, then charge in a straight line
       if (d > 90 && d < 460) {
         e.windup = 0.7; e.pending = 'charge';
@@ -253,11 +296,10 @@ function startEnemyAbility(e, p, d) {
       break;
     }
     case 'boss': {
-      // Phase 1 (>70%): charge + slam. Phase 2 (35–70%): curse zones + summons.
+      // Phase 1 (>70%): barrages + slam. Phase 2 (35–70%): curse zones + summons.
       // Phase 3 (<35%): faster, arena-wide storm patterns.
-      // Twins: 'charger' favours charge+zones, 'bullets' favours summons+storms.
+      // Twins: 'charger' favours zone pressure, 'bullets' favours summons+storms.
       const phase = e.phase || 1;
-      const likesCharge = e.variant !== 'bullets';
       const likesStorm = e.variant !== 'charger';
       if (Math.random() < 0.32) {
         // the Archlich weaves in spells: an arcane fan or a meteor shower
@@ -266,7 +308,7 @@ function startEnemyAbility(e, p, d) {
           const a0 = Math.atan2(p.y - e.y, p.x - e.x);
           for (let i = -3; i <= 3; i++) {
             const a = a0 + i * 0.16;
-            game.enemyProjectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, dmg: e.dmg * 0.7, r: 7, life: 5, color: '#cc88ff' });
+            game.enemyProjectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, dmg: e.dmg * 0.7, r: 7, life: 5, color: '#cc88ff', boss: true });
           }
           addText(e.x, e.y - e.r - 20, 'ARCANE FAN', '#cc88ff', 14);
         } else {
@@ -307,7 +349,7 @@ function startEnemyAbility(e, p, d) {
             game.enemyProjectiles.push({
               x: e.x + Math.cos(a) * 34, y: e.y + Math.sin(a) * 34,
               vx: Math.cos(a) * 120, vy: Math.sin(a) * 120,
-              dmg: Math.round(e.dmg * 0.6), r: 9, life: 6, color: '#ff88dd', homing: 2.6,
+              dmg: Math.round(e.dmg * 0.6), r: 9, life: 6, color: '#ff88dd', homing: 2.6, boss: true,
             });
           }
           addText(e.x, e.y - e.r - 20, 'SEEKERS', '#ff88dd', 14);
@@ -322,20 +364,24 @@ function startEnemyAbility(e, p, d) {
             radius: 90, t: 0, delay: 0.8 + rand(0, 0.6), dmg: e.dmg * 1.2, color: '#aa66ff',
           });
         }
-      } else if (likesCharge && e.nextMove !== 'slam' && d > 120) {
-        e.windup = 0.9; e.pending = 'charge';
-        e.chargeX = (p.x - e.x) / d; e.chargeY = (p.y - e.y) / d;
-        e.chargeTele = { x1: e.x, y1: e.y, x2: clamp(e.x + e.chargeX * 520, WALL + 20, W - WALL - 20), y2: clamp(e.y + e.chargeY * 520, WALL + 20, H - WALL - 20), t: e.windup };
-        e.nextMove = 'slam';
       } else {
         e.windup = 0.9; e.pending = null;
         game.zones.push({ x: p.x, y: p.y, radius: 170, t: 0, delay: 0.9, dmg: e.dmg * 1.3, color: '#aa66ff' });
         if (phase >= 2) // a second creeping curse zone
           game.zones.push({ x: p.x + rand(-120, 120), y: p.y + rand(-120, 120), radius: 110, t: 0, delay: 1.1, dmg: e.dmg, color: '#aa66ff' });
-        e.nextMove = 'charge';
       }
       // later phases attack faster
       e.abilityT = phase >= 3 ? rand(2, 3.2) : phase >= 2 ? rand(3, 4.5) : rand(4, 6);
+      break;
+    }
+    case 'lazeye': { // border patrol that paints a thin laser across the map
+      e.windup = 0.8; e.pending = 'laser';
+      if (e.borderSide === 'top' || e.borderSide === 'bottom') {
+        e.chargeTele = { type: 'line', color: '#ff3344', x1: e.x, y1: WALL + 12, x2: e.x, y2: H - WALL - 12, t: e.windup };
+      } else {
+        e.chargeTele = { type: 'line', color: '#ff3344', x1: WALL + 12, y1: e.y, x2: W - WALL - 12, y2: e.y, t: e.windup };
+      }
+      e.abilityT = rand(2.6, 4.0);
       break;
     }
     case 'warden': { // raise a temporary ward that blocks the player's path
@@ -376,6 +422,12 @@ function triggerEnemyAbility(e, p, d) {
     e.kx = (p.x - e.x) / d * 460;
     e.ky = (p.y - e.y) / d * 460;
     e.abilityT = rand(3, 4.5);
+  } else if (e.pending === 'batStraight' || e.pending === 'batZigzag' || e.pending === 'batCircle') {
+    e.charging = e.pending === 'batCircle' ? 1.1 : e.pending === 'batZigzag' ? 0.75 : 0.5;
+    e.chargeMode = e.pending;
+    e.chargeElapsed = 0;
+    e.chargeSpd = e.pending === 'batCircle' ? 560 : e.pending === 'batZigzag' ? 625 : 720;
+    e.abilityT = rand(2.25, 3.4);
   } else if (e.pending === 'charge') {
     e.charging = 0.55;
     e.chargeSpd = Math.max(320, e.spd * 5);
@@ -387,9 +439,13 @@ function triggerEnemyAbility(e, p, d) {
       const a = (Math.PI * 2 * i) / n + rand(-0.05, 0.05);
       game.enemyProjectiles.push({
         x: e.x, y: e.y, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130,
-        dmg: e.dmg * 0.8, r: 6, life: 6, color: '#ff5577',
+        dmg: e.dmg * 0.8, r: 6, life: 6, color: '#ff5577', boss: !!e.boss,
       });
     }
+    sfx('zap');
+  } else if (e.pending === 'laser') {
+    const tele = e.chargeTele;
+    if (tele) game.enemyLasers.push({ x1: tele.x1, y1: tele.y1, x2: tele.x2, y2: tele.y2, t: 0, dur: 0.38, dmg: e.dmg, color: '#ff3344', hit: false });
     sfx('zap');
   } else if (e.pending === 'detonate') {
     // the queued blast zone (pushed when the fuse lit) handles the damage & boom;
@@ -437,7 +493,10 @@ function updateEnemies(dt) {
       if (e.windup <= 0) triggerEnemyAbility(e, p, d);
     } else if (e.charging > 0) {
       e.charging -= dt;
-      if (e.charging <= 0) e.abilityT = e.boss ? rand(3, 4.5) : rand(5, 7);
+      if (e.charging <= 0) {
+        e.chargeMode = null;
+        e.abilityT = e.type === 'bat' || e.type === 'yellowbat' || e.type === 'redbat' ? rand(2.25, 3.4) : e.boss ? rand(3, 4.5) : rand(5, 7);
+      }
     } else {
       e.abilityT -= dt;
       if (e.abilityT <= 0) startEnemyAbility(e, p, d);
@@ -483,7 +542,7 @@ function updateEnemies(dt) {
           const a = e.spiral.ang + k * (Math.PI * 2 / 3);
           game.enemyProjectiles.push({
             x: e.x, y: e.y, vx: Math.cos(a) * 175, vy: Math.sin(a) * 175,
-            dmg: Math.round(e.dmg * 0.5), r: 6, life: 5, color: '#cc88ff',
+            dmg: Math.round(e.dmg * 0.5), r: 6, life: 5, color: '#cc88ff', boss: !!e.boss,
           });
         }
         sfx('zap');
@@ -496,13 +555,55 @@ function updateEnemies(dt) {
     let packCount = 0;
     for (const ally of game.enemies) if (!ally.dead && dist2(e.x, e.y, ally.x, ally.y) <= 115 * 115) packCount++;
     e.bloodhungry = packCount > 5;
+    e.packCount = packCount;
     if (e.bloodhungry) spd *= 1.15;
+
+    // Bosses are spellcasters: they hold range instead of walking into melee.
+    if (e.boss && e.charging <= 0) {
+      if (d < 420) { mx = -mx; my = -my; }
+      else if (d < 560) { mx = 0; my = 0; }
+    }
+
+    // Laze Eyes patrol only along the arena border.
+    if (e.laserEye) {
+      if (e.borderSide === 'top' || e.borderSide === 'bottom') {
+        mx = e.borderDir || 1; my = 0;
+        e.y = e.borderSide === 'top' ? WALL + e.r : H - WALL - e.r;
+        if (e.x <= WALL + e.r + 2) e.borderDir = 1;
+        if (e.x >= W - WALL - e.r - 2) e.borderDir = -1;
+      } else {
+        mx = 0; my = e.borderDir || 1;
+        e.x = e.borderSide === 'left' ? WALL + e.r : W - WALL - e.r;
+        if (e.y <= WALL + e.r + 2) e.borderDir = 1;
+        if (e.y >= H - WALL - e.r - 2) e.borderDir = -1;
+      }
+    }
 
     // spitters keep shooting distance, shamans hide behind the horde
     if ((e.ranged && !e.boss && d < e.ranged.range * 0.6) || (e.shy && d < 250)) { mx = -mx; my = -my; }
     if (e.flee) { mx = -mx; my = -my; } // Gold Goblin always runs away
     if (e.windup > 0) { mx = 0; my = 0; } // rooted while winding up
-    if (e.charging > 0) { mx = e.chargeX; my = e.chargeY; spd = e.chargeSpd; }
+    if (e.charging > 0) {
+      e.chargeElapsed = (e.chargeElapsed || 0) + dt;
+      if (e.chargeMode === 'batZigzag') {
+        const side = Math.sin(e.chargeElapsed * 24) * 0.95;
+        mx = e.chargeX - e.chargeY * side;
+        my = e.chargeY + e.chargeX * side;
+        const mag = Math.max(0.001, Math.hypot(mx, my));
+        mx /= mag; my /= mag; spd = e.chargeSpd;
+      } else if (e.chargeMode === 'batCircle') {
+        const cx = e.chargeCX || p.x, cy = e.chargeCY || p.y;
+        const rx = e.x - cx, ry = e.y - cy;
+        const rd = Math.max(1, Math.hypot(rx, ry));
+        const radial = ((e.chargeRadius || 120) - rd) / Math.max(e.chargeRadius || 120, 1);
+        mx = (-ry / rd) * (e.chargeDir || 1) + (rx / rd) * radial * 1.6;
+        my = (rx / rd) * (e.chargeDir || 1) + (ry / rd) * radial * 1.6;
+        const mag = Math.max(0.001, Math.hypot(mx, my));
+        mx /= mag; my /= mag; spd = e.chargeSpd;
+      } else {
+        mx = e.chargeX; my = e.chargeY; spd = e.chargeSpd;
+      }
+    }
 
     const oldX = e.x, oldY = e.y;
     e.x += (mx * spd * slowFactor + e.kx) * dt;
@@ -539,7 +640,7 @@ function updateEnemies(dt) {
             const a = (Math.PI * 2 * i) / n + rand(-0.1, 0.1);
             game.enemyProjectiles.push({
               x: e.x, y: e.y, vx: Math.cos(a) * e.ranged.projSpd, vy: Math.sin(a) * e.ranged.projSpd,
-              dmg: e.ranged.dmg, r: 7, life: 5, color: '#cc88ff',
+              dmg: e.ranged.dmg, r: 7, life: 5, color: '#cc88ff', boss: true,
             });
           }
           sfx('zap');
@@ -550,7 +651,7 @@ function updateEnemies(dt) {
           for (const off of spread) {
             game.enemyProjectiles.push({
               x: e.x, y: e.y, vx: Math.cos(a + off) * e.ranged.projSpd, vy: Math.sin(a + off) * e.ranged.projSpd,
-              dmg: e.ranged.dmg, r: 5, life: 4, color: '#ffe96b',
+              dmg: e.ranged.dmg, r: 5, life: 4, color: '#ffe96b', boss: !!e.boss,
             });
           }
         }
