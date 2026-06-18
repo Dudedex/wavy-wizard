@@ -81,10 +81,10 @@ const SPELLS = {
     name: 'Meteor', icon: '☄️', color: '#ff6b4a',
     desc: 'Calls a meteor onto a random enemy. Huge area damage.',
     tiers: [
-      { dmg: 45,  cd: 3.6, radius: 90,  price: 22 },
-      { dmg: 62,  cd: 2.6, radius: 102, price: 50 },
-      { dmg: 100, cd: 3.0, radius: 116, price: 95 },
-      { dmg: 160, cd: 2.6, radius: 132, price: 170 },
+      { dmg: 45,  cd: 3.6, radius: 60, price: 22 },
+      { dmg: 62,  cd: 2.6, radius: 68, price: 50 },
+      { dmg: 100, cd: 3.0, radius: 78, price: 95 },
+      { dmg: 160, cd: 2.6, radius: 88, price: 170 },
     ],
     lines: t => [`Damage: ${t.dmg} (AoE)`, `Radius: ${t.radius}`, `Cooldown: ${t.cd}s`],
   },
@@ -123,7 +123,7 @@ const SPELLS = {
   },
   // Breath spells: a ~90° cone toward the nearest enemy with an elemental aftermath.
   firebreath: {
-    name: 'Fire Breath', icon: '🌋', color: '#ff7a3a', breath: 'fire',
+    name: 'Fire Breath', icon: '🔥', color: '#ff7a3a', breath: 'fire',
     desc: 'Exhale a cone of flame that leaves the ground burning.',
     tiers: [
       { dmg: 16, cd: 0.72, range: 200, price: 20 },

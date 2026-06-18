@@ -6,9 +6,9 @@
 
 
 const SHADE_OF = {
-  blob: 'ooze', bat: 'flyer', spitter: 'maw', brute: 'hulk', imp: 'horned',
+  blob: 'ooze', bat: 'flyer', yellowbat: 'flyer', redbat: 'flyer', spitter: 'maw', brute: 'hulk', imp: 'horned',
   shaman: 'mystic', spark: 'mote', goblin: 'grin', leech: 'worm', warden: 'sentinel',
-  mirror: 'crystal', nuller: 'void', elite: 'ornate', boss: 'overlord',
+  mirror: 'crystal', nuller: 'void', lazeye: 'crystal', elite: 'ornate', boss: 'overlord',
   bomber: 'bomb', caster: 'void',
 };
 

@@ -62,10 +62,10 @@ function spellShopIcon(id) {
     case 'drain': return svg(`<path d="M19 15c9 8 9 16 0 25-9-9-9-17 0-25zM34 8c11 11 11 22 0 33-11-11-11-22 0-33zM49 20c8 8 8 15 0 23-8-8-8-15 0-23z" fill="${c}"/>`);
     case 'orbs': return svg(`<circle cx="32" cy="32" r="7" fill="${c}"/><circle cx="32" cy="10" r="6" fill="${c}"/><circle cx="54" cy="32" r="6" fill="${c}"/><circle cx="32" cy="54" r="6" fill="${c}"/><circle cx="10" cy="32" r="6" fill="${c}"/><circle cx="32" cy="32" r="25" fill="none" stroke="${soft}" stroke-width="3"/>`);
     case 'nova': return svg(`<circle cx="32" cy="32" r="10" fill="${c}"/><circle cx="32" cy="32" r="22" fill="none" stroke="${c}" stroke-width="4"/><circle cx="32" cy="32" r="30" fill="none" stroke="${soft}" stroke-width="3"/>`);
-    case 'firebreath':
-    case 'icebreath':
-    case 'earthbreath':
-    case 'windbreath': return svg(`<path d="M10 42 Q31 8 58 16 Q46 34 58 52 Q31 56 10 42z" fill="${soft}" stroke="${c}" stroke-width="4"/><path d="M18 41 Q34 29 48 31" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="3"/>`);
+    case 'firebreath': return svg(`<path d="M10 42 Q31 8 58 16 Q46 34 58 52 Q31 56 10 42z" fill="#ff7a3a55" stroke="#ff7a3a" stroke-width="4"/><path d="M28 45c8-9-1-14 5-25 10 9 13 17 6 26 6-4 10-10 9-18 8 8 8 18 1 25-8 8-25 7-34-2 6 0 10-2 13-6z" fill="#ffcf54"/>`);
+    case 'icebreath': return svg(`<path d="M10 42 Q31 8 58 16 Q46 34 58 52 Q31 56 10 42z" fill="#a8e6ff55" stroke="#a8e6ff" stroke-width="4"/><path d="M23 42l9-18 9 18M32 24v27M21 36h22" stroke="#f5ffff" stroke-width="3" stroke-linecap="round"/>`);
+    case 'earthbreath': return svg(`<path d="M10 42 Q31 8 58 16 Q46 34 58 52 Q31 56 10 42z" fill="#d7b46a55" stroke="#d7b46a" stroke-width="4"/><path d="M19 43l10-17 16 4 4 16-16 7z" fill="#8a6b3e" stroke="#ffe0a0" stroke-width="2"/>`);
+    case 'windbreath': return svg(`<path d="M10 42 Q31 8 58 16 Q46 34 58 52 Q31 56 10 42z" fill="#8be0ff55" stroke="#8be0ff" stroke-width="4"/><path d="M18 34h25c8 0 8-10 0-10M18 43h31c7 0 7 9-1 9M24 26h14" fill="none" stroke="#eaffff" stroke-width="4" stroke-linecap="round"/>`);
     default: return svg(`<circle cx="32" cy="32" r="22" fill="${soft}" stroke="${c}" stroke-width="4"/>`);
   }
 }
@@ -76,7 +76,7 @@ function displayTier(id, tier, variantKey) {
   if (variantKey && VARIANTS[variantKey] && VARIANTS[variantKey].mod) { t = { ...t }; VARIANTS[variantKey].mod(t); }
   return t;
 }
-function sameSpell(a, b) { return a.id === b.id && a.tier === b.tier && (a.variant || null) === (b.variant || null); }
+function sameSpell(a, b) { return a.id === b.id && a.tier === b.tier; }
 
 // Duplicates are always purchasable now (fusion), so locks never go stale.
 function offerStillValid() { return true; }
@@ -132,10 +132,10 @@ function generateShop() {
 // Merchant events that occasionally appear as a 5th, highlighted shop card.
 const SHOP_EVENTS = {
   gambler: {
-    icon: '🎰', name: 'The Gambler',
-    desc: () => 'Pay for a random item — could be a steal, could be junk.',
+    icon: '🧰', name: 'Treasure Chest',
+    desc: () => 'Open a chest for a random item — could be a steal, could be junk.',
     cost: () => 15, can: g => g.gold >= 15,
-    label: () => 'Gamble — 15g',
+    label: () => 'Open — 15g',
     act: g => { g.gold -= 15; const it = pick(ITEMS); if (it.apply) it.apply(g.player.stats); if (it.proc) addProcItem(it.id); recordItem(it.id); g.player.hp = Math.min(g.player.hp, g.player.stats.maxHp); addText(g.player.x, g.player.y - 40, `Won: ${it.name}!`, '#ffd454', 18); },
   },
   alchemist: {
@@ -178,7 +178,7 @@ const SHOP_EVENTS = {
 };
 
 function rerollCost() {
-  return Math.floor(game.wave * 0.8) + 1 + game.rerolls * 2;
+  return 5 * Math.pow(2, game.rerolls);
 }
 
 function openShop() {
@@ -187,6 +187,16 @@ function openShop() {
   setState('shop');
   renderShop();
   saveRun(); // between-wave checkpoint
+}
+
+function refreshShopIfRoundBoughtOut() {
+  const roundOffers = game.shopOffers.slice(0, 4);
+  if (roundOffers.length === 4 && roundOffers.every(o => o.sold)) {
+    game.shopOffers = [];
+    generateShop();
+    addText(game.player.x, game.player.y - 46, 'Free reroll — new stock!', '#ffd454', 18);
+    sfx('shopReroll');
+  }
 }
 
 function offerPrice(offer) {
@@ -286,7 +296,7 @@ function renderShop() {
       btn.className = 'buy-btn legendary-btn';
       btn.textContent = ev.label(game);
       btn.disabled = !ev.can(game);
-      btn.onclick = () => { ev.act(game); game.shopOffers[idx] = rollOffer(); sfx(ev.debt ? 'shopLegendary' : 'shopBuy'); renderShop(); saveRun(); };
+      btn.onclick = () => { ev.act(game); offer.sold = true; sfx(ev.debt ? 'shopLegendary' : 'shopBuy'); refreshShopIfRoundBoughtOut(); renderShop(); saveRun(); };
       card.appendChild(btn);
       row.appendChild(card);
       return;
@@ -312,15 +322,15 @@ function renderShop() {
       };
       mkBtn(`Restore — ${restoreCost}g`, game.gold < restoreCost, () => {
         game.gold -= restoreCost; p.lastResort = true; p.lastResortType = 'basic';
-        offer.sold = true; sfx('shopLegendary'); addText(p.x, p.y - 40, 'Last Resort restored!', '#ffd454', 20); renderShop(); saveRun();
+        offer.sold = true; sfx('shopLegendary'); addText(p.x, p.y - 40, 'Last Resort restored!', '#ffd454', 20); refreshShopIfRoundBoughtOut(); renderShop(); saveRun();
       });
       mkBtn(`${up.icon} Upgrade — ${upCost}g`, game.gold < upCost, () => {
         game.gold -= upCost; p.lastResort = true; p.lastResortType = offer.up;
-        offer.sold = true; sfx('shopLegendary'); addText(p.x, p.y - 40, `${up.name}!`, up.color, 20); renderShop(); saveRun();
+        offer.sold = true; sfx('shopLegendary'); addText(p.x, p.y - 40, `${up.name}!`, up.color, 20); refreshShopIfRoundBoughtOut(); renderShop(); saveRun();
       });
       mkBtn('Sacrifice → +25% dmg', false, () => {
         p.stats.dmgMult += 0.25; p.lastResortSacrificed = true; p.lastResort = false;
-        offer.sold = true; sfx('shopSell'); addText(p.x, p.y - 40, 'Last Resort sacrificed — +25% damage', '#ff5577', 18); renderShop(); saveRun();
+        offer.sold = true; sfx('shopSell'); addText(p.x, p.y - 40, 'Last Resort sacrificed — +25% damage', '#ff5577', 18); refreshShopIfRoundBoughtOut(); renderShop(); saveRun();
       });
       row.appendChild(card);
       return;
@@ -671,9 +681,10 @@ function buyOffer(idx, fuse) {
 
   if (offer.kind === 'spell') {
     if (fuse) {
-      // buy & fuse: upgrade an owned same-tier (+ same variant) copy directly
+      // buy & fuse: upgrade an owned same-tier copy directly; variants are preserved/merged.
       const owned = p.spells.find(s => sameSpell(s, offer) && s.tier < 3);
       if (!owned) { sfx('shopDeny'); return; }
+      owned.variant = owned.variant || offer.variant;
       owned.tier++;
       owned.t = 0;
       if (p.stats.collector) owned.fuseBonus = (owned.fuseBonus || 0) + 0.15; // Collector: fused spell hits harder
@@ -711,9 +722,10 @@ function buyOffer(idx, fuse) {
   }
   game.gold -= price;
   if (game.discountBuys > 0) game.discountBuys--; // Cursed Discount: spend a cheap purchase
-  game.shopOffers[idx] = rollOffer();
+  offer.sold = true;
   if (offer.kind === 'spell' && !fuse) sfx('shopSpell');
   else if (offer.kind === 'item') sfx('shopBuy');
+  refreshShopIfRoundBoughtOut();
   renderShop();
   saveRun();
 }
@@ -732,6 +744,7 @@ function sellSpell(i) {
 }
 
 // Merge two copies of the same spell (same tier) into one copy a tier higher.
+// Variant + normal fusion keeps the resulting spell variant.
 function fuseSpells(i, j) {
   const p = game.player;
   const a = p.spells[i], b = p.spells[j];
@@ -743,6 +756,7 @@ function fuseSpells(i, j) {
     game.gold -= cost;
     a.fuseBonus = (a.fuseBonus || 0) + 0.15; // …but the fused spell hits harder
   }
+  a.variant = a.variant || b.variant;
   a.tier++;
   a.t = 0;
   p.spells.splice(j, 1);

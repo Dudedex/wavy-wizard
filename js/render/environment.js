@@ -154,8 +154,8 @@ function drawNaturalTerrain(th) {
     const grad = ctx.createLinearGradient(WALL, WALL, W - WALL, H - WALL);
     grad.addColorStop(0, '#c8d6df'); grad.addColorStop(1, '#7f8f9d');
     ctx.fillStyle = grad; ctx.fillRect(WALL, WALL, aw, ah);
-    for (const s of bgSnow) drawSnowDrift(ctx, s.x, s.y, s.r, 0.42);
-    ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 2;
+    for (const s of bgSnow) drawSnowDrift(ctx, s.x, s.y, s.r, 0.24);
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 2;
     for (let i = 0; i < 18; i++) { const x = WALL + (i * 83) % aw, y = WALL + (i * 47) % ah; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 50, y + Math.sin(i) * 22); ctx.stroke(); }
   } else if (id === 'fire' || id === 'ember') {
     ctx.fillStyle = '#1a0c08'; ctx.fillRect(WALL, WALL, aw, ah);
@@ -205,11 +205,11 @@ function drawRealmDecor(th) {
     ctx.shadowBlur = 0;
   } else if (id === 'ice') {
     // snow lying on the ground as soft layered drifts
-    for (const s of bgSnow) drawSnowDrift(ctx, s.x, s.y, s.r, 0.52);
+    for (const s of bgSnow) drawSnowDrift(ctx, s.x, s.y, s.r, 0.30);
     if (!lowFx) for (const f of bgFlakes) { // falling detailed snowflakes
       const y = WALL + ((f.y - WALL + now * f.sp) % ah + ah) % ah;
       const x = f.x + Math.sin(now * 0.8 + f.ph) * f.sway;
-      drawSnowflake(ctx, x, y, f.r * 2.1, now + f.ph, 0.75);
+      drawSnowflake(ctx, x, y, f.r * 2.1, now + f.ph, 0.42);
     }
   } else if (id === 'earth') {
     ctx.globalAlpha = 0.045; ctx.fillStyle = '#9a7a44'; ctx.fillRect(WALL, WALL, aw, ah); // dusty wash
@@ -281,7 +281,7 @@ function drawElementMapLogo(th, cx, cy, now) {
     ctx.beginPath(); ctx.moveTo(0, 52); ctx.quadraticCurveTo(-20, 15, 12, -35); ctx.quadraticCurveTo(28, 5, 0, 52); ctx.stroke();
   } else if (id === 'ice') {
     // snowflake sigil
-    ctx.strokeStyle = 'rgba(225,250,255,0.78)';
+    ctx.strokeStyle = 'rgba(225,250,255,0.45)';
     for (let i = 0; i < 6; i++) {
       const a = i * Math.PI / 3;
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * 88, Math.sin(a) * 88); ctx.stroke();
@@ -374,11 +374,11 @@ function drawStructure(s) {
     for (let i = 0; i <= 16; i++) { const a = sp + i * 0.45; const rr = i * 0.9; const px = Math.cos(a) * rr, py = 14 + Math.sin(a) * rr * 0.5; i ? g.lineTo(px, py) : g.moveTo(px, py); }
     g.stroke();
   } else { // ice patch — frosty shards on the ground
-    g.fillStyle = 'rgba(150,225,255,0.55)';
+    g.fillStyle = 'rgba(150,225,255,0.30)';
     g.beginPath();
     g.moveTo(0, -16); g.lineTo(12, -4); g.lineTo(16, 10); g.lineTo(0, 16); g.lineTo(-16, 8); g.lineTo(-13, -6); g.closePath();
     g.fill();
-    g.strokeStyle = '#eaffff'; g.lineWidth = 1.5;
+    g.strokeStyle = 'rgba(234,255,255,0.55)'; g.lineWidth = 1.5;
     g.beginPath(); g.moveTo(0, -16); g.lineTo(0, 16); g.moveTo(-16, 8); g.lineTo(16, 10); g.stroke();
   }
   g.restore();
@@ -400,10 +400,10 @@ function drawWorldSpawn(ws) {
   const pulse = 0.5 + Math.sin(performance.now() / 300 + ws.t) * 0.5;
   // activation circle (small — you must stand right on it)
   g.globalAlpha = ws.active ? 0.35 + pulse * 0.25 : 0.16;
-  g.fillStyle = ws.kind === 'magnet' ? '#ffd454' : '#c47bff';
+  g.fillStyle = ws.kind === 'magnet' ? '#ffd454' : '#b8792f';
   g.beginPath(); g.arc(ws.x, ws.y, ws.r, 0, Math.PI * 2); g.fill();
   g.globalAlpha = ws.active ? 0.9 : 0.55;
-  g.strokeStyle = ws.kind === 'magnet' ? '#ffd454' : '#c47bff';
+  g.strokeStyle = ws.kind === 'magnet' ? '#ffd454' : '#ffd454';
   g.lineWidth = ws.active ? 3 : 1.5;
   g.beginPath(); g.arc(ws.x, ws.y, ws.r, 0, Math.PI * 2); g.stroke();
   g.globalAlpha = 1;
@@ -424,22 +424,29 @@ function drawWorldSpawn(ws) {
       for (let k = 1; k <= 3; k++) { g.beginPath(); g.arc(0, 0, ws.r + k * 12, -0.6, 0.6); g.stroke(); }
     }
   } else {
-    // ore/crystal mine node
-    g.fillStyle = '#c47bff'; g.shadowColor = '#c47bff'; g.shadowBlur = 8;
-    g.beginPath(); g.moveTo(0, -12); g.lineTo(10, -2); g.lineTo(6, 12); g.lineTo(-6, 12); g.lineTo(-10, -2); g.closePath(); g.fill();
+    // treasure chest item event
+    g.shadowColor = '#ffd454'; g.shadowBlur = ws.active ? 14 : 8;
+    g.fillStyle = '#7a431d';
+    g.strokeStyle = '#ffd454';
+    g.lineWidth = 2;
+    g.beginPath(); g.rect(-16, -6, 32, 20); g.fill(); g.stroke();
+    g.fillStyle = '#b8792f';
+    g.beginPath(); g.moveTo(-16, 0); g.quadraticCurveTo(-13, -14, 0, -14); g.quadraticCurveTo(13, -14, 16, 0); g.closePath(); g.fill(); g.stroke();
     g.shadowBlur = 0;
-    g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(0, -12); g.lineTo(0, 12); g.moveTo(-10, -2); g.lineTo(10, -2); g.stroke();
+    g.strokeStyle = 'rgba(255, 232, 160, 0.85)';
+    g.beginPath(); g.moveTo(-12, 0); g.lineTo(12, 0); g.moveTo(-7, -13); g.lineTo(-7, 14); g.moveTo(7, -13); g.lineTo(7, 14); g.stroke();
+    g.fillStyle = '#ffe96b';
+    g.fillRect(-4, 1, 8, 7);
+    g.strokeStyle = '#5a3218'; g.lineWidth = 1;
+    g.strokeRect(-4, 1, 8, 7);
   }
   g.restore();
 
   // channel progress ring for the mine (hold 3.35s)
   if (ws.kind === 'mine' && ws.prog > 0) {
-    g.strokeStyle = '#c47bff'; g.lineWidth = 3;
+    g.strokeStyle = '#ffd454'; g.lineWidth = 3;
     g.beginPath(); g.arc(ws.x, ws.y, ws.r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp(ws.prog / 3.35, 0, 1)); g.stroke();
   }
 
   // No floating label; icon art communicates the pickup/mine role.
 }
-
-
