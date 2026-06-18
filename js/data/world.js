@@ -7,16 +7,17 @@
 // Danger levels: enemy HP & damage modifier, chosen before each run.
 // Materials compensate: +50% gold per gem per +100% danger.
 const DANGER_LEVELS = [
-  { mod: 0,     name: 'Danger 1',  desc: 'The intended experience' },
-  { mod: 0.10,  name: 'Danger 2',  desc: '+10% enemy HP & damage · +5% materials' },
-  { mod: 0.25,  name: 'Danger 3',  desc: '+25% enemy HP & damage · +13% materials' },
-  { mod: 0.50,  name: 'Danger 4',  desc: '+50% enemy HP & damage · +25% materials' },
-  { mod: 1.00,  name: 'Danger 5',  desc: '+100% enemy HP & damage · +50% materials' },
-  { mod: 1.50,  name: 'Danger 6',  desc: '+150% enemy HP & damage · +75% materials' },
-  { mod: 3.00,  name: 'Danger 7',  desc: '+300% enemy HP & damage · +150% materials' },
-  { mod: 5.00,  name: 'Danger 8',  desc: '+500% enemy HP & damage · +250% materials' },
-  { mod: 7.50,  name: 'Danger 9',  desc: '+750% enemy HP & damage · +375% materials' },
-  { mod: 10.00, name: 'Danger 10', desc: '+1000% enemy HP & damage · +500% materials' },
+  { mod: 0.00, name: 'Danger Level 0', desc: 'Enemy health ×1 · damage ×1' },
+  { mod: 0.25, name: 'Danger Level 1', desc: 'Enemy health ×1 · damage ×1' },
+  { mod: 0.50, name: 'Danger Level 2', desc: 'Enemy health ×1 · damage ×1' },
+  { mod: 1.00, name: 'Danger Level 3', desc: 'Enemy health ×1 · damage ×1' },
+  { mod: 2.00, name: 'Danger Level 4', desc: 'Enemy health ×2 · damage ×1' },
+  { mod: 3.00, name: 'Danger Level 5', desc: 'Enemy health ×3 · damage ×1.5' },
+  { mod: 4.00, name: 'Danger Level 6', desc: 'Enemy health ×4 · damage ×2' },
+  { mod: 5.00, name: 'Danger Level 7', desc: 'Enemy health ×5 · damage ×2.5' },
+  { mod: 6.50, name: 'Danger Level 8', desc: 'Enemy health ×6.5 · damage ×3.25' },
+  { mod: 8.00, name: 'Danger Level 9', desc: 'Enemy health ×8 · damage ×4' },
+  { mod: 10.00, name: 'Danger Level 10', desc: 'Enemy health ×10 · damage ×5' },
 ];
 
 // Arena colour schemes (canvas background / grid / walls), chosen in Settings.

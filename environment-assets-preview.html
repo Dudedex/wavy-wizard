@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wavy Wizard Environment Preview</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; background: #05070d; color: #eaf2ff; font: 14px/1.4 system-ui, sans-serif; }
+    header { padding: 18px 24px 8px; } h1 { margin: 0 0 4px; font-size: 22px; } p { margin: 0; color: #9fb0c8; }
+    canvas { display: block; width: min(1180px, calc(100vw - 32px)); height: auto; margin: 16px auto 24px; border: 1px solid rgba(143,168,255,.28); border-radius: 16px; background: #060a12; box-shadow: 0 18px 60px rgba(0,0,0,.45); }
+    nav { padding: 0 24px; } a { color: #8be0ff; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Environment Asset Preview</h1>
+    <p>Animated realm backdrops with grid, vignette, realm depth lines, glyphs, and biome particles.</p>
+  </header>
+  <nav><a href="asset-previews.html">All previews</a></nav>
+  <canvas id="preview" width="1180" height="760" aria-label="Environment asset preview grid"></canvas>
+  <script>
+    'use strict';
+    const W = 1180, H = 760, WALL = 28;
+    const canvas = document.getElementById('preview');
+    const ctx = canvas.getContext('2d');
+    const game = { opt: { lowFx: false, theme: 'midnight' }, mapElement: null };
+    const rand = (a, b) => a + Math.random() * (b - a);
+    const pick = a => a[Math.floor(Math.random() * a.length)];
+  </script>
+  <script src="js/data/world.js"></script>
+  <script src="js/render/environment.js"></script>
+  <script>
+    'use strict';
+    const themes = [...THEMES, ...Object.values(ELEMENT_THEMES)];
+    let previewTheme = themes[0];
+    function currentTheme() { return previewTheme; }
+    function draw(time) {
+      ctx.clearRect(0, 0, W, H);
+      const cols = 3, cellW = W / cols, cellH = 245;
+      themes.forEach((theme, i) => {
+        const col = i % cols, row = Math.floor(i / cols);
+        previewTheme = theme;
+        game.opt.theme = theme.id;
+        ctx.save();
+        ctx.beginPath(); ctx.roundRect(col * cellW + 12, row * cellH + 12, cellW - 24, cellH - 24, 14); ctx.clip();
+        ctx.translate(col * cellW, row * cellH); ctx.scale(cellW / W, cellH / H);
+        drawBackground();
+        ctx.restore();
+        const x = col * cellW + cellW / 2, y = row * cellH + cellH - 30;
+        ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(col * cellW + 12, row * cellH + cellH - 54, cellW - 24, 42);
+        ctx.fillStyle = '#eaf2ff'; ctx.font = 'bold 15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(theme.name, x, y);
+      });
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
