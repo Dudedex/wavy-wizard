@@ -132,10 +132,10 @@ function generateShop() {
 // Merchant events that occasionally appear as a 5th, highlighted shop card.
 const SHOP_EVENTS = {
   gambler: {
-    icon: '🎰', name: 'The Gambler',
-    desc: () => 'Pay for a random item — could be a steal, could be junk.',
+    icon: '🧰', name: 'Treasure Chest',
+    desc: () => 'Open a chest for a random item — could be a steal, could be junk.',
     cost: () => 15, can: g => g.gold >= 15,
-    label: () => 'Gamble — 15g',
+    label: () => 'Open — 15g',
     act: g => { g.gold -= 15; const it = pick(ITEMS); if (it.apply) it.apply(g.player.stats); if (it.proc) addProcItem(it.id); recordItem(it.id); g.player.hp = Math.min(g.player.hp, g.player.stats.maxHp); addText(g.player.x, g.player.y - 40, `Won: ${it.name}!`, '#ffd454', 18); },
   },
   alchemist: {
