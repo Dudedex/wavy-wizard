@@ -4,13 +4,6 @@
 // Arena background (gradient/dust/runes) + element structures + world spawns
 // ===========================================================================
 
-// Static arcane starfield/dust — generated once, twinkles in render().
-const bgStars = (() => {
-  const a = [];
-  for (let i = 0; i < 110; i++) a.push({ x: rand(WALL, W - WALL), y: rand(WALL, H - WALL), r: rand(0.5, 1.9), ph: rand(0, Math.PI * 2), sp: rand(0.4, 1.6) });
-  return a;
-})();
-
 // Per-realm decoration pools, generated once.
 const bgFlakes  = Array.from({ length: 80 }, () => ({ x: rand(WALL, W - WALL), y: rand(WALL, H - WALL), r: rand(1.2, 3.2), sp: rand(20, 55), sway: rand(8, 22), ph: rand(0, Math.PI * 2) }));
 const bgEmbers  = Array.from({ length: 50 }, () => ({ x: rand(WALL, W - WALL), y: rand(WALL, H - WALL), r: rand(1, 2.6), sp: rand(28, 70), ph: rand(0, Math.PI * 2) }));
@@ -246,33 +239,6 @@ function drawRealmDecor(th) {
 }
 
 
-function drawRealmDepth(th, now) {
-  const aw = W - WALL * 2, ah = H - WALL * 2;
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = game.opt.lowFx ? 0.045 : 0.075;
-  ctx.strokeStyle = th.wall;
-  ctx.lineWidth = 1.25;
-  for (let i = 0; i < 7; i++) {
-    const y = WALL + ((i * 97 + now * (10 + i * 3)) % ah);
-    ctx.beginPath();
-    ctx.moveTo(WALL, y);
-    for (let x = WALL; x <= W - WALL; x += 48) {
-      ctx.lineTo(x, y + Math.sin(now * 0.8 + i + x * 0.012) * 8);
-    }
-    ctx.stroke();
-  }
-  ctx.globalAlpha = game.opt.lowFx ? 0.03 : 0.055;
-  ctx.font = '20px serif';
-  ctx.textAlign = 'center';
-  for (let i = 0; i < 10; i++) {
-    const x = WALL + ((i * 131 + now * 12) % aw);
-    const y = WALL + ((i * 73 + Math.sin(now + i) * 18) % ah);
-    ctx.fillText(i % 2 ? '✧' : '◇', x, y);
-  }
-  ctx.restore();
-  ctx.globalAlpha = 1;
-}
 function drawElementMapLogo(th, cx, cy, now) {
   const id = th.id;
   ctx.save();
@@ -342,7 +308,7 @@ function drawElementMapLogo(th, cx, cy, now) {
 }
 
 
-// Themed arena backdrop: gradient vignette, twinkling dust, slow arcane runes.
+// Themed arena backdrop: natural terrain, a single element logo, and realm assets.
 function drawBackground() {
   const th = currentTheme();
   ctx.fillStyle = th.bg;
@@ -360,56 +326,8 @@ function drawBackground() {
 
   const now = performance.now() / 1000;
 
-  // twinkling dust (skipped on low-fx)
-  if (!game.opt.lowFx) {
-    for (const s of bgStars) {
-      const tw = 0.35 + 0.4 * (0.5 + 0.5 * Math.sin(now * s.sp + s.ph));
-      ctx.globalAlpha = tw;
-      ctx.fillStyle = th.wall;
-      ctx.fillRect(s.x, s.y, s.r, s.r);
-    }
-    ctx.globalAlpha = 1;
-  }
-
+  // Keep the map clean: only the element logo overlays the natural terrain.
   drawElementMapLogo(th, cx, cy, now);
-
-  // very faint guide rings behind the action
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.globalAlpha = 0.055;
-  ctx.strokeStyle = th.wall;
-  ctx.lineWidth = 2;
-  ctx.rotate(now * 0.04);
-  ctx.beginPath(); ctx.arc(0, 0, 220, 0, Math.PI * 2); ctx.stroke();
-  ctx.beginPath(); ctx.arc(0, 0, 150, 0, Math.PI * 2); ctx.stroke();
-  for (let i = 0; i < 12; i++) {
-    const a = (Math.PI * 2 * i) / 12;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * 150, Math.sin(a) * 150);
-    ctx.lineTo(Math.cos(a) * 220, Math.sin(a) * 220);
-    ctx.stroke();
-  }
-  ctx.rotate(-now * 0.10);
-  ctx.beginPath();
-  for (let i = 0; i < 6; i++) {
-    const a = (Math.PI * 2 * i) / 6;
-    const fn = i === 0 ? 'moveTo' : 'lineTo';
-    ctx[fn](Math.cos(a) * 95, Math.sin(a) * 95);
-  }
-  ctx.closePath(); ctx.stroke();
-  ctx.restore();
-  ctx.globalAlpha = 1;
-
-  // subtle pathing grid, softened so the realms read as natural terrain first
-  ctx.save();
-  ctx.globalAlpha = 0.26;
-  ctx.strokeStyle = th.grid;
-  ctx.lineWidth = 1;
-  for (let x = WALL; x <= W - WALL; x += 64) { ctx.beginPath(); ctx.moveTo(x, WALL); ctx.lineTo(x, H - WALL); ctx.stroke(); }
-  for (let y = WALL; y <= H - WALL; y += 64) { ctx.beginPath(); ctx.moveTo(WALL, y); ctx.lineTo(W - WALL, y); ctx.stroke(); }
-  ctx.restore();
-
-  drawRealmDepth(th, now);
 
   // realm-flavoured decoration (embers, snow, dust, grass, …)
   drawRealmDecor(th);
