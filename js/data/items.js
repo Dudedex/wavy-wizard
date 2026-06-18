@@ -35,6 +35,11 @@ const ITEMS = [
       { name: 'SLUGGISH…', spd: -0.25, color: '#9aa7b8' },
     ] } },
   // Synergy items: reward committing to a damage type / spell.
+
+  { id: 'duelistglyph', name: 'Duelist Glyph', icon: '🎯', desc: '+20% single-target spell damage', price: 46, apply: s => { s.typeMult.single = (s.typeMult.single || 1) * 1.20; } },
+  { id: 'breathfocus', name: 'Dragon Lung', icon: '🐉', desc: '+25% breath spell damage', price: 48, apply: s => { s.typeMult.breath = (s.typeMult.breath || 1) * 1.25; } },
+  { id: 'blastprism', name: 'Blast Prism', icon: '💠', desc: '+18% AoE spell damage', price: 50, apply: s => { s.typeMult.aoe = (s.typeMult.aoe || 1) * 1.18; } },
+  { id: 'stormcoil', name: 'Storm Coil', icon: '🧲', desc: '+22% chaining and projectile spell damage', price: 44, apply: s => { s.typeMult.projectile = (s.typeMult.projectile || 1) * 1.22; } },
   { id: 'ember',   name: 'Ember Crown',   icon: '👑', tag: 'fire',   desc: '🔥 Fire spells leave burning ground for 1.5s', price: 34, apply: s => s.burnGround += 1 },
   { id: 'fcore',   name: 'Frozen Core',   icon: '🧊', tag: 'frost',  desc: '❄️ Slowed enemies take +15% damage',        price: 34, apply: s => s.frostAmp += 0.15 },
   { id: 'needle',  name: 'Storm Needle',  icon: '📍', tag: 'storm',  desc: '⚡ Chain Lightning gains +1 chain per crit (this cast)', price: 32, apply: s => s.stormCrit += 1 },

@@ -163,6 +163,7 @@ function freshStats() {
     maxHp: 60, regen: 0, dmgMult: 1, cdMult: 1, crit: 0.03, critMult: 2,
     speedMult: 1, armor: 0, pickup: 80, matMult: 1,
     priceMult: 1, healMult: 1, reclaim: 0,
+    typeMult: { single: 1, aoe: 1, breath: 1, projectile: 1 },
     rangeMult: 1, rangePerkMult: 1, areaMult: 1, doubleCast: false,
     concentrator: false,
     maxSlots: MAX_SPELL_SLOTS,
@@ -354,6 +355,16 @@ function burst(x, y, color, n = 10, spd = 160, life = 0.45) {
   }
 }
 
+
+function spellDamageClass(id) {
+  if (!id || !SPELLS[id]) return null;
+  if (SPELLS[id].breath) return 'breath';
+  if (['fireball', 'poison', 'meteor', 'nova'].includes(id)) return 'aoe';
+  if (['missile', 'frost', 'lightning', 'orbs'].includes(id)) return 'projectile';
+  if (['drain'].includes(id)) return 'single';
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Damage handling
 // ---------------------------------------------------------------------------
@@ -361,6 +372,10 @@ function hitEnemy(e, rawDmg, opts = {}) {
   if (e.dead) return { dmg: 0, crit: false };
   const p = game.player, st = p.stats;
   let dmg = rawDmg * st.dmgMult * (p.tempDmg || 1) * (opts.scale || 1);
+  const cls = spellDamageClass(opts.source);
+  if (cls && st.typeMult && st.typeMult[cls]) dmg *= st.typeMult[cls];
+  // Bloodhungry packs move faster but take extra damage.
+  if (e.bloodhungry) dmg *= 1.30;
   // Frozen Core: slowed enemies take more. Point-Blank Sigil: bonus up close.
   if (st.frostAmp && (e.slowAmt > 0 || opts.slow)) dmg *= 1 + st.frostAmp;
   if (st.pointBlank && dist2(p.x, p.y, e.x, e.y) <= 150 * 150) dmg *= 1 + st.pointBlank;

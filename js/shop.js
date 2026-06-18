@@ -15,7 +15,7 @@ function maxEarnableGold(w) {
 // Item prices climb with the economy: base price + 10% of the wave's gold ceiling.
 // (e.g. a 15g item costs 19g on wave 1 and ~115g on wave 8.)
 function itemPrice(item) {
-  return Math.round(item.price + 0.10 * maxEarnableGold(game.wave));
+  return Math.round(item.price * (1 + game.wave * 0.06) + 0.22 * maxEarnableGold(game.wave));
 }
 
 function spellTierWeightForWave(wave) {
@@ -119,12 +119,13 @@ function generateShop() {
     if (slots.length) game.shopOffers[pick(slots)] = { kind: 'lastresort', up: pick(['phoenix', 'vengeful', 'greedy']) };
   }
 
-  // a merchant event sometimes joins the shop as a 5th, highlighted card
+  // Merchant events share the normal 4 offer slots instead of adding a 5th card.
   if (game.wave >= 2 && Math.random() < 0.4) {
     const evPool = ['gambler', 'alchemist', 'black'];
     if (game.wave >= 3) evPool.push('demon', 'cursed');     // build-debt bargains
     if (game.wave >= 4 && !game.arcaneLoan) evPool.push('loan'); // one-time
-    game.shopOffers.push({ kind: 'event', ev: pick(evPool) });
+    const slots = game.shopOffers.map((o, i) => (o.locked ? -1 : i)).filter(i => i >= 0);
+    if (slots.length) game.shopOffers[pick(slots)] = { kind: 'event', ev: pick(evPool) };
   }
 }
 
@@ -192,7 +193,7 @@ function offerPrice(offer) {
   if (offer.kind === 'event' || offer.kind === 'lastresort') return 0; // these price themselves
   // spell prices climb with the wave too (items already scale via itemPrice);
   // the rise steepens in the late/endless game
-  const spellWaveMult = 1 + (game.wave - 1) * 0.06 + Math.max(0, game.wave - 12) * 0.02;
+  const spellWaveMult = 1 + (game.wave - 1) * 0.12 + Math.max(0, game.wave - 8) * 0.08;
   const base = offer.kind === 'item' ? itemPrice(offer.item)
     : offer.kind === 'legendary' ? 100 + game.wave * 5
     : offer.kind === 'phoenix' ? 120 + game.wave * 4
@@ -268,7 +269,7 @@ function renderShop() {
     card.className = 'card' + (offer.locked ? ' locked' : '') + (offer.kind === 'legendary' ? ' legendary' : '');
     const price = offerPrice(offer);
     if (offer.sold) {
-      card.innerHTML = `<div class="icon">✔️</div><div class="desc">Sold</div>`;
+      card.innerHTML = `<div class="icon">✨</div><div class="desc">New offer incoming…</div>`;
       row.appendChild(card);
       return;
     }
@@ -285,7 +286,7 @@ function renderShop() {
       btn.className = 'buy-btn legendary-btn';
       btn.textContent = ev.label(game);
       btn.disabled = !ev.can(game);
-      btn.onclick = () => { ev.act(game); offer.sold = true; sfx(ev.debt ? 'shopLegendary' : 'shopBuy'); renderShop(); saveRun(); };
+      btn.onclick = () => { ev.act(game); game.shopOffers[idx] = rollOffer(); sfx(ev.debt ? 'shopLegendary' : 'shopBuy'); renderShop(); saveRun(); };
       card.appendChild(btn);
       row.appendChild(card);
       return;
@@ -710,7 +711,7 @@ function buyOffer(idx, fuse) {
   }
   game.gold -= price;
   if (game.discountBuys > 0) game.discountBuys--; // Cursed Discount: spend a cheap purchase
-  offer.sold = true;
+  game.shopOffers[idx] = rollOffer();
   if (offer.kind === 'spell' && !fuse) sfx('shopSpell');
   else if (offer.kind === 'item') sfx('shopBuy');
   renderShop();

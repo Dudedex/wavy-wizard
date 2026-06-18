@@ -493,6 +493,10 @@ function updateEnemies(dt) {
 
     let mx = (p.x - e.x) / d, my = (p.y - e.y) / d;
     let spd = e.spd;
+    let packCount = 0;
+    for (const ally of game.enemies) if (!ally.dead && dist2(e.x, e.y, ally.x, ally.y) <= 115 * 115) packCount++;
+    e.bloodhungry = packCount > 5;
+    if (e.bloodhungry) spd *= 1.15;
 
     // spitters keep shooting distance, shamans hide behind the horde
     if ((e.ranged && !e.boss && d < e.ranged.range * 0.6) || (e.shy && d < 250)) { mx = -mx; my = -my; }
