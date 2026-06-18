@@ -272,6 +272,7 @@ const game = {
   zones: [], // telegraphed enemy ground attacks
   walls: [], // Warden barriers that block player movement
   hazardT: 0, // arcane storm timer
+  antiCampT: 3, // periodic small targeted enemy spell that discourages standing still
   worldEvent: null, worldZones: [], worldEventAt: 0, worldEventPick: null,
   worldTickT: 0, worldSpawnT: 0,
   mapElement: null, // element realm theme for the current wave (waves 1-20)
@@ -335,8 +336,8 @@ function currentTheme() {
 
 const slotCap = () => game.player.stats.maxSlots || MAX_SPELL_SLOTS;
 
-// +20% required XP per level, compounding
-const xpNeeded = lvl => Math.round(10 * Math.pow(1.2, lvl - 1));
+// XP requirements ramp up harder later so late-game level-ups are earned.
+const xpNeeded = lvl => Math.round(12 * Math.pow(1.32, lvl - 1) + Math.max(0, lvl - 6) ** 2 * 3);
 
 // ---------------------------------------------------------------------------
 // Floating text & particles
@@ -593,16 +594,7 @@ function damagePlayer(rawDmg, src, target) {
     if (game.coop) addText(p.x, p.y - 30, (p === game.player ? 'P1' : 'P2') + ' DOWN — revives next wave', '#ff6b6b', 18);
     if (livePlayers().length > 0) return; // a teammate is still alive
 
-    // everyone is down — retry the wave, or end the run
-    if (game.opt.replayFails) {
-      game.deaths = (game.deaths || 0) + 1;
-      sfx('hurt');
-      const w = game.wave;
-      startWave(w);
-      reviveAll();
-      addText(W / 2, H / 2 - 30, 'WAVE FAILED — RETRYING', '#ff6b6b', 26);
-      return;
-    }
+    // everyone is down — show the death screen instead of restarting the round.
     sfx('death');
     clearSave(); // the run is over
     const hlId = recordScore(false);
@@ -800,7 +792,7 @@ function castSpell(spell, opts) {
         }
         // Perfected: the final target of each arc detonates in a small burst
         if (perfected && hitSet.size) explodeAt(lastX, lastY, 80, t.dmg * 0.6, def.color, 'lightning', {});
-        game.beams.push({ pts, t: 0, dur: 0.22, color: def.color, width: perfected ? 5 : 3 });
+        game.beams.push({ pts, t: 0, dur: 0.22, color: def.color, width: perfected ? 5 : 3, source: 'lightning' });
       }
       spellSfx('lightning');
       return true;
@@ -836,7 +828,7 @@ function castSpell(spell, opts) {
     case 'drain': {
       const target = nearestEnemy(p.x, p.y, t.range);
       if (!target) return false;
-      game.beams.push({ pts: [{ x: p.x, y: p.y }, { x: target.x, y: target.y }], t: 0, dur: 0.3, color: def.color, width: 4 });
+      game.beams.push({ pts: [{ x: p.x, y: p.y }, { x: target.x, y: target.y }], t: 0, dur: 0.3, color: def.color, width: 4, source: 'drain' });
       spellSfx('drain');
       hitEnemy(target, t.dmg, {
         heal: t.heal + (ench === 'vampiric' ? 0.1 : 0),
@@ -848,7 +840,7 @@ function castSpell(spell, opts) {
       if (perfected) {
         const second = nearestEnemy(target.x, target.y, 220, new Set([target]));
         if (second) {
-          game.beams.push({ pts: [{ x: target.x, y: target.y }, { x: second.x, y: second.y }], t: 0, dur: 0.3, color: def.color, width: 3 });
+          game.beams.push({ pts: [{ x: target.x, y: target.y }, { x: second.x, y: second.y }], t: 0, dur: 0.3, color: def.color, width: 3, source: 'drain' });
           hitEnemy(second, Math.round(t.dmg * 0.6), { heal: t.heal, source: 'drain' });
         }
       }
@@ -1406,6 +1398,19 @@ function updateHazards(dt) {
   }
 }
 
+function updateAntiCampSpell(dt) {
+  if (game.state !== 'playing') return;
+  game.antiCampT -= dt;
+  if (game.antiCampT > 0) return;
+  game.antiCampT = 3;
+  for (const p of livePlayers()) {
+    game.zones.push({
+      x: clamp(p.x, WALL + 35, W - WALL - 35), y: clamp(p.y, WALL + 35, H - WALL - 35),
+      radius: 46, t: 0, delay: 1.05, dmg: Math.max(4, Math.round((3 + game.wave * 0.6) * (1 + (game.danger || 0) / 2))), color: '#ff3344',
+    });
+  }
+}
+
 function updateWalls(dt) {
   for (const w of game.walls) w.t += dt;
   game.walls = game.walls.filter(w => w.t < w.dur);
@@ -1679,6 +1684,7 @@ function startWave(n) {
   game.worldSpawns = [];
   game.dmgMeter = {};
   game.hazardT = 5; // grace period before the first arcane storm
+  game.antiCampT = 3;
   game.castQueue = [];
   game.fountains = [];
   game.fountainsSpawned = 0;
@@ -1937,12 +1943,6 @@ function renderSettings() {
   }
   el.appendChild(tr);
 
-  // --- Gameplay ---
-  section('Gameplay');
-  row('Replay failed waves', game.opt.replayFails ? 'ON' : 'OFF', !!game.opt.replayFails, () => {
-    game.opt.replayFails = !game.opt.replayFails; saveOpts(); renderSettings();
-  });
-
   // --- Readability ---
   section('Readability');
   for (const s of SETTINGS) {
@@ -2100,11 +2100,15 @@ function computeScore(dps, kills, wave, won) {
 function recordScore(won) {
   const dps = game.runTime > 0 ? game.totalDmg / game.runTime : 0;
   const char = (game.player && game.player.charId) || '?';
+  const nickEl = document.getElementById('score-name');
+  let nick = (nickEl && nickEl.value.trim()) || localStorage.getItem('wavywizards-nick') || '';
+  if (!nick && window.prompt) nick = (window.prompt('Nickname for highscore?', '') || '').trim();
+  if (nick) { try { localStorage.setItem('wavywizards-nick', nick.slice(0, 18)); } catch (e) { /* private */ } }
   const entry = {
     id: Date.now() + '-' + Math.floor(Math.random() * 1e6),
     score: computeScore(dps, game.kills, game.wave, won),
     dps: Math.round(dps), kills: game.kills, wave: game.wave,
-    char, won: !!won, endless: !!game.endless, date: Date.now(),
+    char, nick: nick.slice(0, 18), won: !!won, endless: !!game.endless, date: Date.now(),
   };
   const scores = loadScores();
   scores.push(entry);
@@ -2123,7 +2127,7 @@ function scoreboardHTML(highlightId) {
   let rows = '';
   scores.forEach((s, i) => {
     const charDef = CHARACTERS.find(c => c.id === s.char);
-    const who = charDef ? charDef.name : s.char;
+    const who = s.nick || (charDef ? charDef.name : s.char);
     const rank = MEDALS[i] || (i + 1);
     const hl = s.id === highlightId ? ' class="sb-hl"' : '';
     const flag = s.won ? ' 🏆' : '';
@@ -2300,7 +2304,7 @@ function renderDangerSelect() {
   DANGER_LEVELS.forEach((d, i) => {
     const btn = document.createElement('button');
     btn.className = 'danger-btn' + (i === dangerLevel ? ' on' : '');
-    btn.textContent = d.mod === 0 ? '0%' : `+${Math.round(d.mod * 100)}%`;
+    btn.textContent = String(i);
     btn.title = `${d.name} — ${d.desc}`;
     btn.onclick = () => {
       dangerLevel = i;
@@ -2355,11 +2359,7 @@ function showCharSelect() {
 function renderStartOptions() {
   const el = document.getElementById('start-options');
   if (!el) return;
-  const on = !!game.opt.replayFails;
-  el.innerHTML = `<button id="opt-replay" class="danger-btn${on ? ' on' : ''}">↻ Replay failed waves: ${on ? 'ON' : 'OFF'}</button>`;
-  document.getElementById('opt-replay').onclick = () => {
-    game.opt.replayFails = !game.opt.replayFails; saveOpts(); renderStartOptions();
-  };
+  el.innerHTML = '<p class="subtitle small-hint">Hover a danger level to preview enemy health and damage scaling.</p>';
 }
 
 function showSpellSelect() {
@@ -2434,9 +2434,9 @@ function showLevelUp() {
 document.getElementById('btn-reroll').onclick = () => {
   const p = game.player;
   // Arcane Loan: rerolling is forbidden while dangerously frail
-  if (game.arcaneLoan && p.stats.maxHp < 6) return;
+  if (game.arcaneLoan && p.stats.maxHp < 6) { sfx('shopDeny'); return; }
   const cost = rerollCost();
-  if (game.gold < cost) return;
+  if (game.gold < cost) { sfx('shopDeny'); return; }
   game.gold -= cost;
   game.rerolls++;
   // Arcane Loan: each reroll gambles on a damage boost / max-HP toll
@@ -2445,7 +2445,7 @@ document.getElementById('btn-reroll').onclick = () => {
     if (Math.random() < 0.10) { p.stats.maxHp = Math.max(1, p.stats.maxHp - 5); p.hp = Math.min(p.hp, p.stats.maxHp); }
   }
   generateShop();
-  sfx('buy');
+  sfx('shopReroll');
   renderShop();
   saveRun();
 };
@@ -2582,6 +2582,7 @@ function frame(now) {
     updateZones(dt);
     updateWalls(dt);
     updateWorld(dt);
+  updateAntiCampSpell(dt);
     updateTornadoes(dt);
     updateWorldSpawns(dt);
     updateSpawning(dt);
@@ -2701,6 +2702,105 @@ function drawDownedBody(p) {
   ctx.fillText('💀 DOWN', p.x, p.y - 40);
 }
 
+
+function colorWithAlpha(col, alpha) {
+  if (col && col[0] === '#' && col.length === 7) {
+    const n = parseInt(col.slice(1), 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+  }
+  return col;
+}
+
+function drawSharpTriangle(g, x, y, size, alpha) {
+  g.fillStyle = `rgba(220, 248, 255, ${alpha})`;
+  g.beginPath();
+  g.moveTo(x + size * 1.6, y);
+  g.lineTo(x - size, y - size * 0.75);
+  g.lineTo(x - size * 0.55, y);
+  g.lineTo(x - size, y + size * 0.75);
+  g.closePath();
+  g.fill();
+}
+
+function drawShieldShape(g, x, y, r, col, alpha = 1) {
+  g.save();
+  g.translate(x, y);
+  g.fillStyle = colorWithAlpha(col, 0.14 * alpha);
+  g.strokeStyle = colorWithAlpha(col, 0.85 * alpha);
+  g.lineWidth = 2.5;
+  g.beginPath();
+  g.moveTo(0, -r);
+  g.quadraticCurveTo(r * 0.78, -r * 0.72, r * 0.72, -r * 0.02);
+  g.quadraticCurveTo(r * 0.6, r * 0.62, 0, r);
+  g.quadraticCurveTo(-r * 0.6, r * 0.62, -r * 0.72, -r * 0.02);
+  g.quadraticCurveTo(-r * 0.78, -r * 0.72, 0, -r);
+  g.closePath();
+  g.fill(); g.stroke();
+  g.strokeStyle = colorWithAlpha('#ffffff', 0.45 * alpha);
+  g.lineWidth = 1.2;
+  g.beginPath(); g.moveTo(0, -r * 0.72); g.lineTo(0, r * 0.62); g.moveTo(-r * 0.42, -r * 0.08); g.lineTo(r * 0.42, -r * 0.08); g.stroke();
+  g.restore();
+}
+
+function drawSpellProjectileAsset(g, pr, time) {
+  const tf = pr.tierFx || 0;
+  const speed = Math.max(1, Math.hypot(pr.vx || 0, pr.vy || 0));
+  const ang = Math.atan2(pr.vy || 0, pr.vx || 1);
+  const pulse = 0.5 + Math.sin(time * 10 + pr.x * 0.01) * 0.5;
+  g.save();
+  g.translate(pr.x, pr.y);
+  g.rotate(ang);
+  g.globalCompositeOperation = 'lighter';
+
+  if (pr.kind === 'missile') {
+    // Magic Missile: tiny particles forming a sharp triangle, echoed three times behind.
+    for (let i = 3; i >= 0; i--) drawSharpTriangle(g, -i * pr.r * 1.45, 0, pr.r * (1.05 - i * 0.12), 0.88 - i * 0.16);
+    g.fillStyle = colorWithAlpha(pr.color, 0.75);
+    for (let i = 0; i < 9; i++) {
+      const back = 5 + i * 3.2;
+      const spread = (i % 3 - 1) * pr.r * 0.36;
+      g.beginPath(); g.arc(-back, spread, Math.max(1, pr.r * 0.16), 0, Math.PI * 2); g.fill();
+    }
+  } else if (pr.kind === 'fireball') {
+    // Fireball: layered flame body with hot core and ragged ember tail.
+    for (let i = 0; i < 5; i++) {
+      g.fillStyle = i < 2 ? colorWithAlpha('#ff3b1f', 0.35) : colorWithAlpha('#ff9a3a', 0.36);
+      g.beginPath();
+      g.ellipse(-pr.r * (1.1 + i * 0.38), Math.sin(time * 6 + i) * pr.r * 0.18, pr.r * (1.2 - i * 0.12), pr.r * (0.75 - i * 0.07), 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.fillStyle = '#ff7a3a'; g.shadowColor = '#ff6b2a'; g.shadowBlur = 16;
+    g.beginPath(); g.arc(0, 0, pr.r * (1.05 + pulse * 0.16), 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ffe96b'; g.beginPath(); g.arc(pr.r * 0.12, -pr.r * 0.12, pr.r * 0.48, 0, Math.PI * 2); g.fill();
+  } else if (pr.kind === 'frost') {
+    // Frost Shard: crisp ice particle/shard with facets.
+    g.fillStyle = colorWithAlpha('#a8e6ff', 0.82); g.strokeStyle = 'rgba(235,252,255,0.95)'; g.lineWidth = 1.4;
+    g.beginPath(); g.moveTo(pr.r * 1.9, 0); g.lineTo(-pr.r * 0.15, -pr.r); g.lineTo(-pr.r * 1.45, 0); g.lineTo(-pr.r * 0.15, pr.r); g.closePath(); g.fill(); g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,0.72)';
+    g.beginPath(); g.moveTo(pr.r * 1.35, 0); g.lineTo(-pr.r * 0.85, 0); g.moveTo(-pr.r * 0.1, -pr.r * 0.75); g.lineTo(-pr.r * 0.1, pr.r * 0.75); g.stroke();
+  } else {
+    const tail = Math.min(42, speed * 0.055 + pr.r * 2.5);
+    const grad = g.createLinearGradient(-tail, 0, pr.r, 0);
+    grad.addColorStop(0, colorWithAlpha(pr.color, 0));
+    grad.addColorStop(0.55, colorWithAlpha(pr.color, 0.42));
+    grad.addColorStop(1, colorWithAlpha(pr.color, 0.9));
+    g.fillStyle = grad;
+    g.beginPath(); g.ellipse(-tail * 0.35, 0, tail * 0.65, pr.r * 0.75, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = pr.color; g.shadowColor = pr.color; g.shadowBlur = tf >= 2 ? 18 : 10;
+    g.beginPath(); g.arc(0, 0, pr.r + (tf >= 2 ? 1.5 : 0), 0, Math.PI * 2); g.fill();
+  }
+
+  if (tf >= 3) {
+    g.strokeStyle = 'rgba(255,212,84,0.9)'; g.lineWidth = 2;
+    g.beginPath(); g.arc(0, 0, pr.r + 4 + pulse * 2, 0, Math.PI * 2); g.stroke();
+  }
+  if (tf >= 2) {
+    g.fillStyle = 'rgba(255,255,255,0.85)';
+    g.beginPath(); g.arc(-pr.r * 0.2, -pr.r * 0.25, pr.r * 0.28, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+
 function render() {
   ctx.save();
   ctx.clearRect(0, 0, W, H);
@@ -2712,20 +2812,33 @@ function render() {
   // themed atmospheric background (gradient, dust, runes, grid, walls)
   drawBackground();
 
-  // ground clouds — poison (green) or Ember Crown burning ground (orange)
+  // ground clouds — poison renders as clustered toxic puffs; fire as burning ground
   for (const c of game.clouds) {
     const fade = c.t < 0.3 ? c.t / 0.3 : c.t > c.dur - 0.5 ? (c.dur - c.t) / 0.5 : 1;
+    const now = performance.now() / 1000;
     if (c.fire) {
       ctx.fillStyle = `rgba(255, 140, 60, ${0.18 * fade})`;
       ctx.beginPath(); ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = `rgba(255, 170, 70, ${0.55 * fade})`;
+      ctx.lineWidth = 2; ctx.stroke();
     } else {
-      ctx.fillStyle = `rgba(120, 200, 60, ${0.16 * fade})`;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = `rgba(120, 210, 75, ${0.12 * fade})`;
       ctx.beginPath(); ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = `rgba(155, 224, 90, ${0.5 * fade})`;
+      for (let i = 0; i < 9; i++) {
+        const a = i * Math.PI * 2 / 9 + now * 0.25;
+        const rr = c.radius * (0.18 + (i % 3) * 0.18);
+        const px = c.x + Math.cos(a) * rr;
+        const py = c.y + Math.sin(a * 1.2) * rr * 0.62;
+        ctx.fillStyle = `rgba(155, 224, 90, ${0.18 * fade})`;
+        ctx.beginPath(); ctx.ellipse(px, py, c.radius * 0.28, c.radius * 0.18, a, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.strokeStyle = `rgba(155, 224, 90, ${0.55 * fade})`;
+      ctx.setLineDash([5, 8]); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(c.x, c.y, c.radius * (0.92 + Math.sin(now * 2 + c.x) * 0.04), 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]); ctx.restore();
     }
-    ctx.lineWidth = 2;
-    ctx.stroke();
   }
 
   // enemy danger zones — hostile: pulsing DASHED ring + warning sign.
@@ -2749,6 +2862,25 @@ function render() {
     ctx.textAlign = 'center';
     ctx.fillText('⚠', z.x, z.y + 7);
     ctx.globalAlpha = 1;
+  }
+
+
+  // charge telegraphs — red lanes show where lunging enemies will travel.
+  for (const e of game.enemies) {
+    if (!e.chargeTele || e.windup <= 0 || e.dead) continue;
+    const pulse = 0.5 + Math.sin(performance.now() / 80) * 0.5;
+    ctx.save();
+    ctx.globalAlpha = 0.35 + pulse * 0.35;
+    ctx.strokeStyle = '#ff3344';
+    ctx.lineWidth = (e.boss ? 12 : 7) * (game.opt.bigTele ? 1.35 : 1);
+    ctx.setLineDash([14, 9]);
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(e.chargeTele.x1, e.chargeTele.y1); ctx.lineTo(e.chargeTele.x2, e.chargeTele.y2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.12;
+    ctx.lineWidth += 12;
+    ctx.beginPath(); ctx.moveTo(e.chargeTele.x1, e.chargeTele.y1); ctx.lineTo(e.chargeTele.x2, e.chargeTele.y2); ctx.stroke();
+    ctx.restore();
   }
 
   // world-event hazards — they DAMAGE you, so they share the hostile language:
@@ -2807,10 +2939,18 @@ function render() {
     ctx.beginPath(); ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = `rgba(255, 107, 74, ${0.12 + prog * 0.2})`;
     ctx.beginPath(); ctx.arc(m.x, m.y, m.radius * prog, 0, Math.PI * 2); ctx.fill();
-    // falling rock
+    // falling fire meteor: hot rock with flame trail
     const fy = m.y - (1 - prog) * 420;
-    ctx.fillStyle = '#ff8c5a';
-    ctx.beginPath(); ctx.arc(m.x + (1 - prog) * 60, fy, 10, 0, Math.PI * 2); ctx.fill();
+    const mx = m.x + (1 - prog) * 60;
+    const tail = 70 * (1 - prog);
+    const grad = ctx.createLinearGradient(mx - tail, fy - tail, mx, fy);
+    grad.addColorStop(0, 'rgba(255, 70, 24, 0)');
+    grad.addColorStop(0.55, 'rgba(255, 110, 42, 0.55)');
+    grad.addColorStop(1, 'rgba(255, 233, 107, 0.9)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.ellipse(mx - tail * 0.25, fy - tail * 0.25, 16 + tail * 0.25, 9, Math.PI / 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#3a2118'; ctx.strokeStyle = '#ff8c5a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(mx, fy, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   }
 
   // element landmarks (drawn on the ground, under the action)
@@ -2951,13 +3091,8 @@ function render() {
     ctx.save();
     ctx.translate(p.x, p.y);
     if (p.invuln > 0 && Math.floor(p.invuln * 20) % 2 === 0) ctx.globalAlpha = 0.45;
-    // shield bubble
-    if (p.shield > 0) {
-      ctx.strokeStyle = 'rgba(143, 168, 255, 0.8)';
-      ctx.fillStyle = 'rgba(143, 168, 255, 0.12)';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(0, 0, p.r + 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    }
+    // arcane shield: stable shield silhouette, not a pulsing bubble
+    if (p.shield > 0) drawShieldShape(ctx, 0, 0, p.r + 13, '#8fa8ff', clamp(p.shield / Math.max(1, p.shieldCap || p.shield), 0.45, 1));
     // --- wizard sprite ---
     const face = p.face || 1;
     const bob = p.moving ? Math.sin(p.walkT || 0) * 1.6 : 0;
@@ -3018,10 +3153,12 @@ function render() {
         const a = p.orbAngle * dir + (Math.PI * 2 * i) / t.count;
         const ox = p.x + Math.cos(a) * orbitR, oy = p.y + Math.sin(a) * orbitR;
         ctx.fillStyle = '#c47bff';
-        ctx.shadowColor = '#c47bff'; ctx.shadowBlur = 12;
+        ctx.shadowColor = '#c47bff'; ctx.shadowBlur = 14;
         ctx.beginPath(); ctx.arc(ox, oy, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(230,210,255,0.8)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(ox, oy, 11, 0, Math.PI * 2); ctx.stroke();
         ctx.shadowBlur = 0;
-        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fillStyle = 'rgba(255,255,255,0.78)';
         ctx.beginPath(); ctx.arc(ox - 2, oy - 2, 3, 0, Math.PI * 2); ctx.fill();
       }
     });
@@ -3039,24 +3176,9 @@ function render() {
     ctx.shadowBlur = 0; ctx.globalAlpha = 1;
   }
 
-  // projectiles — Tier III+ casts glow brighter; Tier IV adds a golden halo
-  for (const pr of game.projectiles) {
-    const tf = pr.tierFx || 0;
-    if (tf >= 3) { // perfected: outer golden ring
-      ctx.strokeStyle = 'rgba(255,212,84,0.9)'; ctx.lineWidth = 2;
-      ctx.shadowColor = '#ffd454'; ctx.shadowBlur = 16;
-      ctx.beginPath(); ctx.arc(pr.x, pr.y, pr.r + 4, 0, Math.PI * 2); ctx.stroke();
-      ctx.shadowBlur = 0;
-    }
-    ctx.fillStyle = pr.color;
-    ctx.shadowColor = pr.color; ctx.shadowBlur = tf >= 2 ? 18 : 10;
-    ctx.beginPath(); ctx.arc(pr.x, pr.y, pr.r + (tf >= 2 ? 1.5 : 0), 0, Math.PI * 2); ctx.fill();
-    if (tf >= 2) { // bright core
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.beginPath(); ctx.arc(pr.x, pr.y, pr.r * 0.45, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-  }
+  // player spell projectiles — animated spell assets with tails, cores, and tier halos
+  const spellNow = performance.now() / 1000;
+  for (const pr of game.projectiles) drawSpellProjectileAsset(ctx, pr, spellNow);
   for (const pr of game.enemyProjectiles) {
     const hc = game.opt.hiContrast;
     const rr = hc ? pr.r + 2 : pr.r;
@@ -3071,39 +3193,72 @@ function render() {
   // beams (lightning / drain)
   for (const b of game.beams) {
     const alpha = 1 - b.t / b.dur;
-    ctx.strokeStyle = b.color;
+    ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.lineWidth = b.width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.shadowColor = b.color; ctx.shadowBlur = 12;
-    ctx.beginPath();
-    ctx.moveTo(b.pts[0].x, b.pts[0].y);
-    for (let i = 1; i < b.pts.length; i++) {
-      const a = b.pts[i - 1], c = b.pts[i];
-      const mx = (a.x + c.x) / 2 + rand(-10, 10);
-      const my = (a.y + c.y) / 2 + rand(-10, 10);
-      ctx.quadraticCurveTo(mx, my, c.x, c.y);
+    if (b.source === 'lightning') {
+      // Chain Lightning: angular, branching lightning with a bright white core.
+      ctx.strokeStyle = b.color; ctx.lineWidth = b.width + 2;
+      ctx.beginPath();
+      for (let i = 1; i < b.pts.length; i++) {
+        const a = b.pts[i - 1], c = b.pts[i];
+        const steps = 5;
+        for (let k = 0; k <= steps; k++) {
+          const u = k / steps;
+          const x = a.x + (c.x - a.x) * u + (k && k < steps ? rand(-12, 12) : 0);
+          const y = a.y + (c.y - a.y) * u + (k && k < steps ? rand(-12, 12) : 0);
+          (i === 1 && k === 0) ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+      }
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = Math.max(1, b.width * 0.45); ctx.stroke();
+    } else if (b.source === 'drain') {
+      // Life Drain: red droplet-shaped particles flowing along the tether.
+      ctx.strokeStyle = 'rgba(255, 90, 125, 0.35)'; ctx.lineWidth = b.width;
+      ctx.beginPath(); ctx.moveTo(b.pts[0].x, b.pts[0].y); ctx.lineTo(b.pts[b.pts.length - 1].x, b.pts[b.pts.length - 1].y); ctx.stroke();
+      for (let i = 0; i < b.pts.length - 1; i++) {
+        const a = b.pts[i], c = b.pts[i + 1];
+        for (let k = 0; k < 7; k++) {
+          const u = (k / 7 + b.t * 3) % 1;
+          const x = a.x + (c.x - a.x) * u;
+          const y = a.y + (c.y - a.y) * u;
+          ctx.fillStyle = `rgba(255, 70, 110, ${0.35 + 0.45 * (1 - u)})`;
+          ctx.beginPath();
+          ctx.moveTo(x, y - 5); ctx.quadraticCurveTo(x + 5, y, x, y + 7); ctx.quadraticCurveTo(x - 5, y, x, y - 5); ctx.fill();
+        }
+      }
+    } else {
+      ctx.strokeStyle = b.color; ctx.lineWidth = b.width;
+      ctx.beginPath(); ctx.moveTo(b.pts[0].x, b.pts[0].y);
+      for (let i = 1; i < b.pts.length; i++) ctx.lineTo(b.pts[i].x, b.pts[i].y);
+      ctx.stroke();
     }
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
-  // breath cones — a fading wedge in the cast direction
+  // breath cones — shockwave bands traveling through a cone area
   for (const c of game.cones) {
-    const fade = 1 - c.t / c.dur;
+    const prog = c.t / c.dur;
+    const fade = 1 - prog;
     ctx.save();
     ctx.translate(c.x, c.y);
     ctx.rotate(c.angle);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 4; i++) {
+      const u = (prog + i * 0.18) % 1;
+      const rr = c.range * u;
+      ctx.globalAlpha = fade * (0.65 - i * 0.1);
+      ctx.strokeStyle = c.color;
+      ctx.lineWidth = 8 * (1 - u) + 1.5;
+      ctx.beginPath(); ctx.arc(0, 0, rr, -c.half, c.half); ctx.stroke();
+    }
     const g2 = ctx.createLinearGradient(0, 0, c.range, 0);
-    g2.addColorStop(0, c.color + 'cc');
-    g2.addColorStop(1, c.color + '00');
-    ctx.globalAlpha = fade;
-    ctx.fillStyle = g2;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, c.range, -c.half, c.half);
-    ctx.closePath();
-    ctx.fill();
+    g2.addColorStop(0, colorWithAlpha(c.color, 0.22 * fade));
+    g2.addColorStop(1, colorWithAlpha(c.color, 0));
+    ctx.fillStyle = g2; ctx.globalAlpha = 0.6 * fade;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, c.range, -c.half, c.half); ctx.closePath(); ctx.fill();
     ctx.restore();
     ctx.globalAlpha = 1;
   }
@@ -3241,7 +3396,7 @@ function drawHUD() {
   if (game.danger > 0) {
     ctx.fillStyle = '#ff6b6b';
     ctx.font = 'bold 13px "Segoe UI", sans-serif';
-    ctx.fillText(`☠ +${Math.round(game.danger * 100)}%`, W / 2 + 130, 44);
+    ctx.fillText(`☠ Danger ${dangerLevel}`, W / 2 + 130, 44);
   }
   // wave modifier banner
   if (game.modifier) {

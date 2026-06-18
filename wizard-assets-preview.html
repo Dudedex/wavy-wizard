@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wavy Wizard Wizard Preview</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; background: radial-gradient(circle at 50% 15%, #1b2240, #070a12 70%); color: #eaf2ff; font: 14px/1.4 system-ui, sans-serif; }
+    header { padding: 18px 24px 8px; }
+    h1 { margin: 0 0 4px; font-size: 22px; }
+    p { margin: 0; color: #9fb0c8; }
+    canvas { display: block; width: min(1180px, calc(100vw - 32px)); height: auto; margin: 16px auto 24px; border: 1px solid rgba(143,168,255,.28); border-radius: 16px; background: rgba(6,10,18,.72); box-shadow: 0 18px 60px rgba(0,0,0,.45); }
+    nav { padding: 0 24px; } a { color: #8be0ff; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Wizard Asset Preview</h1>
+    <p>Playable wizard sprites with animated aura, robe details, staff or hand-cast effects, and facing changes.</p>
+  </header>
+  <nav><a href="asset-previews.html">All previews</a></nav>
+  <canvas id="preview" width="1180" height="760" aria-label="Wizard asset preview grid"></canvas>
+  <script src="js/data/characters.js"></script>
+  <script src="js/render/wizard.js"></script>
+  <script>
+    'use strict';
+    const canvas = document.getElementById('preview');
+    const ctx = canvas.getContext('2d');
+    const start = performance.now();
+    function draw(time) {
+      const t = (time - start) / 1000;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const cols = 5, cellW = canvas.width / cols, cellH = 178;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      CHARACTERS.forEach((c, i) => {
+        const col = i % cols, row = Math.floor(i / cols);
+        const x = cellW * col + cellW / 2, y = 86 + row * cellH;
+        ctx.save();
+        ctx.fillStyle = 'rgba(143,168,255,.08)'; ctx.strokeStyle = 'rgba(143,168,255,.16)';
+        ctx.beginPath(); ctx.roundRect(cellW * col + 14, row * cellH + 18, cellW - 28, cellH - 30, 14); ctx.fill(); ctx.stroke();
+        ctx.translate(x, y + Math.sin(t * 4 + i) * 2); ctx.scale(2.25, 2.25);
+        drawWizardSprite(ctx, c.look, Math.cos(t * 0.9 + i) < 0 ? -1 : 1, t + i * 0.25, false);
+        ctx.restore();
+        ctx.fillStyle = '#eaf2ff'; ctx.font = 'bold 15px system-ui, sans-serif'; ctx.fillText(c.name, x, y + 62);
+        ctx.fillStyle = '#9fb0c8'; ctx.font = '12px system-ui, sans-serif'; ctx.fillText(c.title, x, y + 82);
+      });
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>

@@ -42,14 +42,14 @@ function comboForWave(w) {
 }
 
 function waveScale(wave) {
-  // Gentler early game, steeper late game. HP compounds faster than before but
-  // starts lower; damage & speed gain a quadratic term so late waves bite harder
-  // and enemies move noticeably faster.
+  // Wave 1 uses authored base stats (Green Ghost: 5 HP / 3 damage).
+  // Later waves scale more deliberately so spell damage can be balanced around
+  // a 25-damage single-target baseline.
   const w = wave - 1;
   return {
-    hp: 0.6 * Math.pow(1.13, w),
-    dmg: 0.7 + 0.09 * w + 0.0025 * w * w,
-    spd: 1 + 0.012 * w + 0.0012 * w * w,
+    hp: Math.pow(1.16, w),
+    dmg: 1 + 0.055 * w + 0.0016 * w * w,
+    spd: 1 + 0.018 * w + 0.0014 * w * w,
   };
 }
 
@@ -57,12 +57,13 @@ function spawnEnemy(type, x, y, opts) {
   opts = opts || {};
   const def = ENEMY_TYPES[type];
   const sc = waveScale(game.wave);
-  const danger = 1 + (game.danger || 0);
+  const dangerHp = Math.max(1, game.danger || 0);
+  const dangerDmg = Math.max(1, (game.danger || 0) / 2);
   const e = {
     type, name: def.name, r: def.r,
     x, y,
-    hp: Math.round(def.hp * sc.hp * danger * (game.debtHpMult || 1)), maxHp: Math.round(def.hp * sc.hp * danger * (game.debtHpMult || 1)),
-    spd: def.spd * sc.spd * (game.debtSpdMult || 1), dmg: def.dmg * sc.dmg * danger,
+    hp: Math.round(def.hp * sc.hp * dangerHp * (game.debtHpMult || 1)), maxHp: Math.round(def.hp * sc.hp * dangerHp * (game.debtHpMult || 1)),
+    spd: def.spd * sc.spd * (game.debtSpdMult || 1), dmg: def.dmg * sc.dmg * dangerDmg,
     color: def.color, gems: def.gems,
     ranged: def.ranged ? { ...def.ranged, t: rand(0.5, def.ranged.cd) } : null,
     splitsInto: def.splitsInto || null,
@@ -178,6 +179,7 @@ function startEnemyAbility(e, p, d) {
       if (d > 90 && d < 460) {
         e.windup = 0.7; e.pending = 'charge';
         e.chargeX = (p.x - e.x) / d; e.chargeY = (p.y - e.y) / d;
+        e.chargeTele = { x1: e.x, y1: e.y, x2: clamp(e.x + e.chargeX * 520, WALL + 20, W - WALL - 20), y2: clamp(e.y + e.chargeY * 520, WALL + 20, H - WALL - 20), t: e.windup };
       } else e.abilityT = 1;
       break;
     }
@@ -323,6 +325,7 @@ function startEnemyAbility(e, p, d) {
       } else if (likesCharge && e.nextMove !== 'slam' && d > 120) {
         e.windup = 0.9; e.pending = 'charge';
         e.chargeX = (p.x - e.x) / d; e.chargeY = (p.y - e.y) / d;
+        e.chargeTele = { x1: e.x, y1: e.y, x2: clamp(e.x + e.chargeX * 520, WALL + 20, W - WALL - 20), y2: clamp(e.y + e.chargeY * 520, WALL + 20, H - WALL - 20), t: e.windup };
         e.nextMove = 'slam';
       } else {
         e.windup = 0.9; e.pending = null;
@@ -497,12 +500,28 @@ function updateEnemies(dt) {
     if (e.windup > 0) { mx = 0; my = 0; } // rooted while winding up
     if (e.charging > 0) { mx = e.chargeX; my = e.chargeY; spd = e.chargeSpd; }
 
+    const oldX = e.x, oldY = e.y;
     e.x += (mx * spd * slowFactor + e.kx) * dt;
     e.y += (my * spd * slowFactor + e.ky) * dt;
     e.kx *= Math.pow(0.02, dt); // knockback decay
     e.ky *= Math.pow(0.02, dt);
     e.x = clamp(e.x, WALL + e.r, W - WALL - e.r);
     e.y = clamp(e.y, WALL + e.r, H - WALL - e.r);
+    e.vx = (e.x - oldX) / Math.max(dt, 0.0001);
+    e.vy = (e.y - oldY) / Math.max(dt, 0.0001);
+
+    // Lightweight movement particles give the procedural enemy assets a real
+    // animated footprint without requiring external sprite sheets.
+    if (!game.opt.lowFx && Math.hypot(e.vx, e.vy) > 25 && Math.random() < dt * (e.boss ? 18 : e.elite ? 12 : 7)) {
+      const back = Math.atan2(-e.vy, -e.vx) + rand(-0.55, 0.55);
+      game.particles.push({
+        x: e.x + Math.cos(back) * e.r * 0.65,
+        y: e.y + Math.sin(back) * e.r * 0.65,
+        vx: Math.cos(back) * rand(10, 55),
+        vy: Math.sin(back) * rand(10, 55),
+        t: 0, dur: rand(0.18, 0.42), color: e.color, r: rand(1.2, Math.max(2, e.r * 0.16)),
+      });
+    }
 
     // ranged attack
     if (e.ranged) {
@@ -523,7 +542,7 @@ function updateEnemies(dt) {
         } else {
           const a = Math.atan2(p.y - e.y, p.x - e.x);
           // veteran spitters fire a three-shot spread
-          const spread = game.wave >= 10 ? [-0.28, 0, 0.28] : [0];
+          const spread = game.wave >= 8 ? [-0.34, 0, 0.34] : [-0.18, 0, 0.18];
           for (const off of spread) {
             game.enemyProjectiles.push({
               x: e.x, y: e.y, vx: Math.cos(a + off) * e.ranged.projSpd, vy: Math.sin(a + off) * e.ranged.projSpd,

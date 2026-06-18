@@ -45,6 +45,31 @@ function rollOffer() {
 }
 
 // Display name + (variant-modified) tier stats for spells/offers.
+
+function spellShopIcon(id) {
+  const def = SPELLS[id];
+  const c = def ? def.color : '#8be0ff';
+  const soft = `${c}55`;
+  const svg = (body) => `<div class="icon spell-shop-icon" style="--spell:${c};--spell-soft:${soft}"><svg viewBox="0 0 64 64" aria-hidden="true">${body}</svg></div>`;
+  switch (id) {
+    case 'missile': return svg(`<polygon points="48,32 24,18 30,32 24,46" fill="${c}"/><polygon points="34,32 16,22 21,32 16,42" fill="${soft}"/><polygon points="22,32 8,24 12,32 8,40" fill="${soft}"/><circle cx="12" cy="20" r="2" fill="#eaffff"/><circle cx="18" cy="47" r="1.8" fill="#eaffff"/>`);
+    case 'fireball': return svg(`<path d="M45 45c8-13-5-18-2-32-12 8-24 17-22 32 2 11 20 12 24 0z" fill="#ff6b2a"/><path d="M35 48c7-8-1-13 1-22-7 5-15 11-14 22 1 8 10 8 13 0z" fill="#ffe96b"/>`);
+    case 'frost': return svg(`<polygon points="34,6 52,31 34,58 12,34" fill="${c}" stroke="#f5ffff" stroke-width="3"/><path d="M34 8v48M14 34h36M24 22l20 20" stroke="#ffffff" stroke-opacity=".75" stroke-width="2"/>`);
+    case 'lightning': return svg(`<polygon points="36,4 14,36 31,34 25,60 51,25 34,27" fill="${c}" stroke="#fff6a8" stroke-width="2"/>`);
+    case 'shield': return svg(`<path d="M32 6C48 11 53 15 52 28c-1 15-10 24-20 30-10-6-19-15-20-30C11 15 16 11 32 6z" fill="${soft}" stroke="${c}" stroke-width="4"/><path d="M32 13v36M20 29h24" stroke="#ffffff" stroke-opacity=".55" stroke-width="2"/>`);
+    case 'poison': return svg(`<circle cx="25" cy="34" r="15" fill="${soft}"/><circle cx="39" cy="32" r="13" fill="${soft}"/><circle cx="33" cy="23" r="12" fill="${soft}"/><path d="M18 42c9 7 25 7 34-1" fill="none" stroke="${c}" stroke-width="4" stroke-linecap="round"/>`);
+    case 'meteor': return svg(`<path d="M47 13C33 15 14 27 11 47c13-12 25-9 40-28z" fill="#ff6b2a"/><circle cx="36" cy="33" r="13" fill="#3a2118" stroke="#ffb347" stroke-width="3"/><circle cx="32" cy="29" r="4" fill="#ffe96b"/>`);
+    case 'drain': return svg(`<path d="M19 15c9 8 9 16 0 25-9-9-9-17 0-25zM34 8c11 11 11 22 0 33-11-11-11-22 0-33zM49 20c8 8 8 15 0 23-8-8-8-15 0-23z" fill="${c}"/>`);
+    case 'orbs': return svg(`<circle cx="32" cy="32" r="7" fill="${c}"/><circle cx="32" cy="10" r="6" fill="${c}"/><circle cx="54" cy="32" r="6" fill="${c}"/><circle cx="32" cy="54" r="6" fill="${c}"/><circle cx="10" cy="32" r="6" fill="${c}"/><circle cx="32" cy="32" r="25" fill="none" stroke="${soft}" stroke-width="3"/>`);
+    case 'nova': return svg(`<circle cx="32" cy="32" r="10" fill="${c}"/><circle cx="32" cy="32" r="22" fill="none" stroke="${c}" stroke-width="4"/><circle cx="32" cy="32" r="30" fill="none" stroke="${soft}" stroke-width="3"/>`);
+    case 'firebreath':
+    case 'icebreath':
+    case 'earthbreath':
+    case 'windbreath': return svg(`<path d="M10 42 Q31 8 58 16 Q46 34 58 52 Q31 56 10 42z" fill="${soft}" stroke="${c}" stroke-width="4"/><path d="M18 41 Q34 29 48 31" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="3"/>`);
+    default: return svg(`<circle cx="32" cy="32" r="22" fill="${soft}" stroke="${c}" stroke-width="4"/>`);
+  }
+}
+
 function spellName(s) { return s.variant && VARIANTS[s.variant] ? VARIANTS[s.variant].name : SPELLS[s.id].name; }
 function displayTier(id, tier, variantKey) {
   let t = SPELLS[id].tiers[tier];
@@ -260,7 +285,7 @@ function renderShop() {
       btn.className = 'buy-btn legendary-btn';
       btn.textContent = ev.label(game);
       btn.disabled = !ev.can(game);
-      btn.onclick = () => { ev.act(game); offer.sold = true; sfx('buy'); renderShop(); saveRun(); };
+      btn.onclick = () => { ev.act(game); offer.sold = true; sfx(ev.debt ? 'shopLegendary' : 'shopBuy'); renderShop(); saveRun(); };
       card.appendChild(btn);
       row.appendChild(card);
       return;
@@ -286,15 +311,15 @@ function renderShop() {
       };
       mkBtn(`Restore — ${restoreCost}g`, game.gold < restoreCost, () => {
         game.gold -= restoreCost; p.lastResort = true; p.lastResortType = 'basic';
-        offer.sold = true; sfx('level'); addText(p.x, p.y - 40, 'Last Resort restored!', '#ffd454', 20); renderShop(); saveRun();
+        offer.sold = true; sfx('shopLegendary'); addText(p.x, p.y - 40, 'Last Resort restored!', '#ffd454', 20); renderShop(); saveRun();
       });
       mkBtn(`${up.icon} Upgrade — ${upCost}g`, game.gold < upCost, () => {
         game.gold -= upCost; p.lastResort = true; p.lastResortType = offer.up;
-        offer.sold = true; sfx('level'); addText(p.x, p.y - 40, `${up.name}!`, up.color, 20); renderShop(); saveRun();
+        offer.sold = true; sfx('shopLegendary'); addText(p.x, p.y - 40, `${up.name}!`, up.color, 20); renderShop(); saveRun();
       });
       mkBtn('Sacrifice → +25% dmg', false, () => {
         p.stats.dmgMult += 0.25; p.lastResortSacrificed = true; p.lastResort = false;
-        offer.sold = true; sfx('buy'); addText(p.x, p.y - 40, 'Last Resort sacrificed — +25% damage', '#ff5577', 18); renderShop(); saveRun();
+        offer.sold = true; sfx('shopSell'); addText(p.x, p.y - 40, 'Last Resort sacrificed — +25% damage', '#ff5577', 18); renderShop(); saveRun();
       });
       row.appendChild(card);
       return;
@@ -345,7 +370,7 @@ function renderShop() {
           `<div class="fc-row"><span>${k}</span><span>${a} → <b>${b}</b></span></div>`).join('')}${bonus}</div>`;
       }
       card.innerHTML = `
-        <div class="icon">${def.icon}</div>
+        ${spellShopIcon(offer.id)}
         <div class="name">${spellName(offer)}</div>
         <div class="tier-badge" style="color:${tc}">${offer.variant ? '✦ Variant · ' : ''}Tier ${TIER_NAMES[offer.tier]}</div>
         <div class="tags">${tags}</div>
@@ -371,7 +396,7 @@ function renderShop() {
     lockBtn.title = offer.locked
       ? 'Unlock — this offer will be rerolled normally'
       : 'Lock — keep this offer through rerolls and into the next shop';
-    lockBtn.onclick = () => { offer.locked = !offer.locked; renderShop(); };
+    lockBtn.onclick = () => { offer.locked = !offer.locked; sfx('shopLock'); renderShop(); };
     card.appendChild(lockBtn);
     const btn = document.createElement('button');
     btn.className = 'buy-btn';
@@ -420,7 +445,7 @@ function renderShop() {
       : '';
     html += `<div class="owned-spell" data-idx="${i}">
       <span class="hotkey">[${keyLabel(slotKeys[i])}]</span>
-      <div class="icon">${def.icon}</div>
+      ${spellShopIcon(sp.id)}
       <div class="info"><div class="nm">${spellName(sp)}</div><div class="tr" style="color:${tc}">Tier ${TIER_NAMES[sp.tier]} · ${'★'.repeat(game.masteryLvl[sp.id] || 0)}${'☆'.repeat(5 - (game.masteryLvl[sp.id] || 0))}</div>${sp.tier === 3 && def.perfected ? `<div class="ench" style="color:#ffd454" title="Perfected">⭐ ${def.perfected}</div>` : ''}${sp.enchant ? `<div class="ench">⭐ ${ENCHANTS[sp.enchant].name}</div>` : ''}</div>
       ${fuseHtml}
       <div class="move-btns">
@@ -456,6 +481,7 @@ function renderShop() {
     btn.onclick = () => {
       const i = +btn.dataset.idx, j = i + (+btn.dataset.dir);
       [p.spells[i], p.spells[j]] = [p.spells[j], p.spells[i]];
+      sfx('shopLock');
       renderShop();
     };
   });
@@ -521,7 +547,7 @@ function renderWaveOverview(elId, currentW) {
       <span class="wo-n">${w}</span><span class="wo-i">${info.icon}</span><span class="wo-l">${info.label}</span>${realmPip}</div>`;
   }
   const realm = game.mapElement ? `${ELEMENT_THEMES[game.mapElement].icon} ${ELEMENT_THEMES[game.mapElement].name}` : 'Endless — no realm';
-  const dgr = game.danger > 0 ? ` · ☠ +${Math.round(game.danger * 100)}%` : '';
+  const dgr = game.danger > 0 ? ` · ☠ Danger ${Math.round((DANGER_LEVELS || []).findIndex(d => d.mod === game.danger))}` : '';
   const mod = game.modifier ? ` · ${game.modifier.icon} ${game.modifier.name}` : '';
   el.innerHTML = `<div class="wo-head">Wave ${game.wave}${game.endless ? ' (Endless)' : ' / 20'} · ${realm}${dgr}${mod}</div>
     <div class="wo-row">
@@ -639,35 +665,35 @@ function buyOffer(idx, fuse) {
   const offer = game.shopOffers[idx];
   if (!offer || offer.sold) return;
   const price = offerPrice(offer);
-  if (game.gold < price) return;
+  if (game.gold < price) { sfx('shopDeny'); return; }
   const p = game.player;
 
   if (offer.kind === 'spell') {
     if (fuse) {
       // buy & fuse: upgrade an owned same-tier (+ same variant) copy directly
       const owned = p.spells.find(s => sameSpell(s, offer) && s.tier < 3);
-      if (!owned) return;
+      if (!owned) { sfx('shopDeny'); return; }
       owned.tier++;
       owned.t = 0;
       if (p.stats.collector) owned.fuseBonus = (owned.fuseBonus || 0) + 0.15; // Collector: fused spell hits harder
-      sfx('level');
+      sfx('shopFuse');
     } else {
-      if (p.spells.length >= slotCap()) return; // no free slot
+      if (p.spells.length >= slotCap()) { sfx('shopDeny'); return; } // no free slot
       p.spells.push({ id: offer.id, tier: offer.tier, t: 0, auto: true, variant: offer.variant });
     }
   } else if (offer.kind === 'legendary') {
     const sp = offer.spellRef;
-    if (!p.spells.includes(sp)) return; // the target spell was sold
+    if (!p.spells.includes(sp)) { sfx('shopDeny'); return; } // the target spell was sold
     // up to 3 spells may carry an enchant; replacing this spell's own is free room
     const enchantedCount = p.spells.filter(s => s.enchant).length;
-    if (!sp.enchant && enchantedCount >= 3) return; // no room for a new enchant
+    if (!sp.enchant && enchantedCount >= 3) { sfx('shopDeny'); return; } // no room for a new enchant
     sp.enchant = offer.ench; // replaces this spell's own enchant if it had one
     addText(p.x, p.y - 40, `${SPELLS[sp.id].name}: ${ENCHANTS[offer.ench].name} equipped!`, '#ffd454', 20);
-    sfx('level');
+    sfx('shopLegendary');
   } else if (offer.kind === 'phoenix') {
     p.lastResort = true;
     addText(p.x, p.y - 40, 'Last Resort restored!', '#ffd454', 20);
-    sfx('level');
+    sfx('shopLegendary');
   } else {
     if (offer.item.apply) offer.item.apply(p.stats);
     if (offer.item.proc) addProcItem(offer.item.id);
@@ -685,7 +711,8 @@ function buyOffer(idx, fuse) {
   game.gold -= price;
   if (game.discountBuys > 0) game.discountBuys--; // Cursed Discount: spend a cheap purchase
   offer.sold = true;
-  sfx('buy');
+  if (offer.kind === 'spell' && !fuse) sfx('shopSpell');
+  else if (offer.kind === 'item') sfx('shopBuy');
   renderShop();
   saveRun();
 }
@@ -698,7 +725,7 @@ function sellSpell(i) {
   const sellVal = Math.max(1, Math.floor(SPELLS[sp.id].tiers[sp.tier].price / 2));
   p.spells.splice(i, 1);
   game.gold += sellVal;
-  sfx('sell');
+  sfx('shopSell');
   renderShop();
   saveRun();
 }
@@ -711,14 +738,14 @@ function fuseSpells(i, j) {
   // Collector: manual fusion costs gold (half the spell's tier price)
   if (p.stats.collector) {
     const cost = manualFuseCost(a);
-    if (game.gold < cost) { sfx('sell'); return; }
+    if (game.gold < cost) { sfx('shopDeny'); return; }
     game.gold -= cost;
     a.fuseBonus = (a.fuseBonus || 0) + 0.15; // …but the fused spell hits harder
   }
   a.tier++;
   a.t = 0;
   p.spells.splice(j, 1);
-  sfx('level');
+  sfx('shopFuse');
   renderShop();
   saveRun();
 }
