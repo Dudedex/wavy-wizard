@@ -288,11 +288,10 @@ function startEnemyAbility(e, p, d) {
       break;
     }
     case 'boss': {
-      // Phase 1 (>70%): charge + slam. Phase 2 (35–70%): curse zones + summons.
+      // Phase 1 (>70%): barrages + slam. Phase 2 (35–70%): curse zones + summons.
       // Phase 3 (<35%): faster, arena-wide storm patterns.
-      // Twins: 'charger' favours charge+zones, 'bullets' favours summons+storms.
+      // Twins: 'charger' favours zone pressure, 'bullets' favours summons+storms.
       const phase = e.phase || 1;
-      const likesCharge = e.variant !== 'bullets';
       const likesStorm = e.variant !== 'charger';
       if (Math.random() < 0.32) {
         // the Archlich weaves in spells: an arcane fan or a meteor shower
@@ -357,17 +356,11 @@ function startEnemyAbility(e, p, d) {
             radius: 90, t: 0, delay: 0.8 + rand(0, 0.6), dmg: e.dmg * 1.2, color: '#aa66ff',
           });
         }
-      } else if (likesCharge && e.nextMove !== 'slam' && d > 120) {
-        e.windup = 0.9; e.pending = 'charge';
-        e.chargeX = (p.x - e.x) / d; e.chargeY = (p.y - e.y) / d;
-        e.chargeTele = { x1: e.x, y1: e.y, x2: clamp(e.x + e.chargeX * 520, WALL + 20, W - WALL - 20), y2: clamp(e.y + e.chargeY * 520, WALL + 20, H - WALL - 20), t: e.windup };
-        e.nextMove = 'slam';
       } else {
         e.windup = 0.9; e.pending = null;
         game.zones.push({ x: p.x, y: p.y, radius: 170, t: 0, delay: 0.9, dmg: e.dmg * 1.3, color: '#aa66ff' });
         if (phase >= 2) // a second creeping curse zone
           game.zones.push({ x: p.x + rand(-120, 120), y: p.y + rand(-120, 120), radius: 110, t: 0, delay: 1.1, dmg: e.dmg, color: '#aa66ff' });
-        e.nextMove = 'charge';
       }
       // later phases attack faster
       e.abilityT = phase >= 3 ? rand(2, 3.2) : phase >= 2 ? rand(3, 4.5) : rand(4, 6);
@@ -542,6 +535,12 @@ function updateEnemies(dt) {
     e.bloodhungry = packCount > 5;
     e.packCount = packCount;
     if (e.bloodhungry) spd *= 1.15;
+
+    // Bosses are spellcasters: they hold range instead of walking into melee.
+    if (e.boss && e.charging <= 0) {
+      if (d < 420) { mx = -mx; my = -my; }
+      else if (d < 560) { mx = 0; my = 0; }
+    }
 
     // spitters keep shooting distance, shamans hide behind the horde
     if ((e.ranged && !e.boss && d < e.ranged.range * 0.6) || (e.shy && d < 250)) { mx = -mx; my = -my; }
