@@ -300,6 +300,7 @@ const game = {
   modGemMult: 0, modXpMult: 1, modDmgTaken: 1, modCdMult: 1,
   modSpawnMult: 1, modFountainMult: 1, modHazardMult: 1, modSwarm: false,
   pendingShopDiscount: 0,
+  pendingMightyBoosts: 0,
   // "Build debt": shop bargains with delayed costs
   debtHpMult: 1, debtSpdMult: 1, // next-wave enemy buffs (reset each wave)
   discountBuys: 0,               // Cursed Discount: N cheaper purchases left
@@ -1688,7 +1689,7 @@ function startWave(n) {
     addText(p0.x, p0.y - 50, 'THE CURSE DEEPENS · −8 MAX HP', '#ff5577', 18);
   }
   game.waveTime = 0;
-  game.waveDur = bossCountForWave(n) ? Infinity : Math.min(60, 16 + n * 2) + 10;
+  game.waveDur = Math.min(60, 16 + n * 2) + 10;
   game.spawnTimer = 0.5;
   game.eliteSpawned = false;
   game.bossSpawned = false;
@@ -1846,6 +1847,7 @@ function endWave() {
   const bonus = 8 + game.wave;
   game.gold += bonus; game.goldEarned += bonus;
   game.player.hp = game.player.stats.maxHp; // full heal between waves
+  if (bossCountForWave(game.wave) > 0) game.pendingMightyBoosts++;
   addText(p.x, p.y - 64, `Wave clear! +${bonus} gold`, '#ffd454', 18);
   if (coins > 0) addText(p.x, p.y - 44, `Banked ${banked} · Budget +${toBudget} · Voided ${voided}`, '#9fb0c8', 14);
 
@@ -1866,10 +1868,13 @@ function afterWaveCollected() {
     document.getElementById('win-board').innerHTML = scoreboardHTML(hlId);
     return;
   }
-  checkMastery();
-  if (game.pendingMastery.length) showMastery();
-  else if (game.pendingLevelUps > 0) showLevelUp();
-  else openShop();
+  if (game.pendingMightyBoosts > 0) showMightyLevelUp();
+  else {
+    checkMastery();
+    if (game.pendingMastery.length) showMastery();
+    else if (game.pendingLevelUps > 0) showLevelUp();
+    else openShop();
+  }
 }
 
 // Detect spells that crossed a new mastery threshold (cumulative run damage).
@@ -1886,6 +1891,13 @@ function checkMastery() {
 
 function afterMasteryDone() {
   if (game.pendingLevelUps > 0) showLevelUp();
+  else openShop();
+}
+
+function afterMightyDone() {
+  checkMastery();
+  if (game.pendingMastery.length) showMastery();
+  else if (game.pendingLevelUps > 0) showLevelUp();
   else openShop();
 }
 
@@ -2446,6 +2458,7 @@ function beginRun(starterSpell) {
 // ---------------------------------------------------------------------------
 function showLevelUp() {
   setState('levelup');
+  document.querySelector('#levelup h2').textContent = 'LEVEL UP!';
   const remaining = game.pendingLevelUps;
   document.getElementById('levelup-count').textContent =
     remaining > 1 ? `${remaining} upgrades to pick` : 'Pick an upgrade';
@@ -2464,6 +2477,31 @@ function showLevelUp() {
       saveRun();
       if (game.pendingLevelUps > 0) showLevelUp();
       else openShop();
+    };
+    row.appendChild(card);
+  }
+}
+
+function showMightyLevelUp() {
+  setState('levelup');
+  document.querySelector('#levelup h2').textContent = 'MIGHTY BOOST!';
+  document.getElementById('levelup-count').textContent =
+    game.pendingMightyBoosts > 1 ? `${game.pendingMightyBoosts} mighty boosts to pick` : 'Boss wave cleared — pick a 5× stat boost';
+  const row = document.getElementById('levelup-choices');
+  row.innerHTML = '';
+  const opts = [...MIGHTY_LEVELUP_OPTIONS].sort(() => Math.random() - 0.5).slice(0, 3);
+  for (const opt of opts) {
+    const card = document.createElement('div');
+    card.className = 'card choice legendary';
+    card.innerHTML = `<div class="icon">${opt.icon}</div><div class="name">${opt.name}</div><div class="desc">${signColor(opt.desc)}</div>`;
+    card.onclick = () => {
+      opt.apply(game.player.stats, game.player);
+      game.player.hp = Math.min(game.player.hp, game.player.stats.maxHp);
+      game.pendingMightyBoosts--;
+      sfx('level');
+      saveRun();
+      if (game.pendingMightyBoosts > 0) showMightyLevelUp();
+      else afterMightyDone();
     };
     row.appendChild(card);
   }
@@ -2631,9 +2669,7 @@ function frame(now) {
     updateGems(dt);
     updateFx(dt);
 
-    const bossesDead = bossCountForWave(game.wave) > 0 && game.bossSpawned &&
-      game.spawns.every(s => s.type !== 'boss') && !game.enemies.some(e => e.boss);
-    if (game.waveTime >= game.waveDur || bossesDead) endWave();
+    if (game.waveTime >= game.waveDur) endWave();
   } else if (game.state === 'waveend') {
     updateGems(dt);
     updateFx(dt);

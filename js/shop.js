@@ -62,10 +62,10 @@ function spellShopIcon(id) {
     case 'drain': return svg(`<path d="M19 15c9 8 9 16 0 25-9-9-9-17 0-25zM34 8c11 11 11 22 0 33-11-11-11-22 0-33zM49 20c8 8 8 15 0 23-8-8-8-15 0-23z" fill="${c}"/>`);
     case 'orbs': return svg(`<circle cx="32" cy="32" r="7" fill="${c}"/><circle cx="32" cy="10" r="6" fill="${c}"/><circle cx="54" cy="32" r="6" fill="${c}"/><circle cx="32" cy="54" r="6" fill="${c}"/><circle cx="10" cy="32" r="6" fill="${c}"/><circle cx="32" cy="32" r="25" fill="none" stroke="${soft}" stroke-width="3"/>`);
     case 'nova': return svg(`<circle cx="32" cy="32" r="10" fill="${c}"/><circle cx="32" cy="32" r="22" fill="none" stroke="${c}" stroke-width="4"/><circle cx="32" cy="32" r="30" fill="none" stroke="${soft}" stroke-width="3"/>`);
-    case 'firebreath':
-    case 'icebreath':
-    case 'earthbreath':
-    case 'windbreath': return svg(`<path d="M10 42 Q31 8 58 16 Q46 34 58 52 Q31 56 10 42z" fill="${soft}" stroke="${c}" stroke-width="4"/><path d="M18 41 Q34 29 48 31" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="3"/>`);
+    case 'firebreath': return svg(`<path d="M10 42 Q31 8 58 16 Q46 34 58 52 Q31 56 10 42z" fill="#ff7a3a55" stroke="#ff7a3a" stroke-width="4"/><path d="M28 45c8-9-1-14 5-25 10 9 13 17 6 26 6-4 10-10 9-18 8 8 8 18 1 25-8 8-25 7-34-2 6 0 10-2 13-6z" fill="#ffcf54"/>`);
+    case 'icebreath': return svg(`<path d="M10 42 Q31 8 58 16 Q46 34 58 52 Q31 56 10 42z" fill="#a8e6ff55" stroke="#a8e6ff" stroke-width="4"/><path d="M23 42l9-18 9 18M32 24v27M21 36h22" stroke="#f5ffff" stroke-width="3" stroke-linecap="round"/>`);
+    case 'earthbreath': return svg(`<path d="M10 42 Q31 8 58 16 Q46 34 58 52 Q31 56 10 42z" fill="#d7b46a55" stroke="#d7b46a" stroke-width="4"/><path d="M19 43l10-17 16 4 4 16-16 7z" fill="#8a6b3e" stroke="#ffe0a0" stroke-width="2"/>`);
+    case 'windbreath': return svg(`<path d="M10 42 Q31 8 58 16 Q46 34 58 52 Q31 56 10 42z" fill="#8be0ff55" stroke="#8be0ff" stroke-width="4"/><path d="M18 34h25c8 0 8-10 0-10M18 43h31c7 0 7 9-1 9M24 26h14" fill="none" stroke="#eaffff" stroke-width="4" stroke-linecap="round"/>`);
     default: return svg(`<circle cx="32" cy="32" r="22" fill="${soft}" stroke="${c}" stroke-width="4"/>`);
   }
 }

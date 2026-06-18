@@ -73,3 +73,13 @@ const LEVELUP_OPTIONS = [
   { name: 'Greed',      icon: '🧲', desc: '+15 pickup range, +8% materials', apply: s => { s.pickup += 15; s.matMult += 0.08; } },
 ];
 
+const MIGHTY_LEVELUP_OPTIONS = [
+  { name: 'Mighty Power',      icon: '🔥', desc: '+30% spell damage',  apply: s => s.dmgMult += 0.30 },
+  { name: 'Mighty Vitality',   icon: '❤️', desc: '+30 max HP (and heal 30)', apply: (s, p) => { s.maxHp += 30; p.hp = Math.min(s.maxHp, p.hp + 30); } },
+  { name: 'Mighty Haste',      icon: '⏳', desc: '-20% spell cooldowns', apply: s => s.cdMult *= 0.80 },
+  { name: 'Mighty Swiftness',  icon: '👢', desc: '+25% move speed',    apply: s => s.speedMult += 0.25 },
+  { name: 'Mighty Toughness',  icon: '🛡️', desc: '+5 armor',          apply: s => s.armor += 5 },
+  { name: 'Mighty Precision',  icon: '🎯', desc: '+20% crit chance',   apply: s => s.crit += 0.20 },
+  { name: 'Mighty Mending',    icon: '💚', desc: '+2.25 HP / sec',     apply: s => s.regen += 2.25 },
+  { name: 'Mighty Greed',      icon: '🧲', desc: '+75 pickup range, +40% materials', apply: s => { s.pickup += 75; s.matMult += 0.40; } },
+];

@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 // Enemies & waves
 // ---------------------------------------------------------------------------
-// Milestone waves: horde waves swarm you, boss waves end when every boss dies.
+// Milestone waves: horde waves swarm you, boss waves last the full timer.
 // Past wave 20 (endless mode) the milestones repeat on a 5-wave cycle.
 const BOSS_WAVES = { 10: 1, 15: 1, 20: 2 };
 const HORDE_WAVES = [5, 15];
