@@ -433,18 +433,13 @@ function drawWorldSpawn(ws) {
   }
   g.restore();
 
-  // channel progress ring for the mine (hold 5s)
+  // channel progress ring for the mine (hold 3.35s)
   if (ws.kind === 'mine' && ws.prog > 0) {
     g.strokeStyle = '#c47bff'; g.lineWidth = 3;
-    g.beginPath(); g.arc(ws.x, ws.y, ws.r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp(ws.prog / 5, 0, 1)); g.stroke();
+    g.beginPath(); g.arc(ws.x, ws.y, ws.r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp(ws.prog / 3.35, 0, 1)); g.stroke();
   }
 
-  // label
-  g.globalAlpha = ws.active ? 1 : 0.7;
-  g.fillStyle = ws.kind === 'magnet' ? '#ffd454' : '#d9b9ff';
-  g.font = 'bold 12px "Segoe UI", sans-serif'; g.textAlign = 'center';
-  g.fillText(ws.kind === 'magnet' ? '🧲 gold magnet' : '⛏ item mine', ws.x, ws.y - ws.r - 8);
-  g.globalAlpha = 1;
+  // No floating label; icon art communicates the pickup/mine role.
 }
 
 

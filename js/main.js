@@ -163,6 +163,7 @@ function freshStats() {
     maxHp: 60, regen: 0, dmgMult: 1, cdMult: 1, crit: 0.03, critMult: 2,
     speedMult: 1, armor: 0, pickup: 80, matMult: 1,
     priceMult: 1, healMult: 1, reclaim: 0,
+    typeMult: { single: 1, aoe: 1, breath: 1, projectile: 1 },
     rangeMult: 1, rangePerkMult: 1, areaMult: 1, doubleCast: false,
     concentrator: false,
     maxSlots: MAX_SPELL_SLOTS,
@@ -272,6 +273,7 @@ const game = {
   zones: [], // telegraphed enemy ground attacks
   walls: [], // Warden barriers that block player movement
   hazardT: 0, // arcane storm timer
+  antiCampT: 3, // periodic small targeted enemy spell that discourages standing still
   worldEvent: null, worldZones: [], worldEventAt: 0, worldEventPick: null,
   worldTickT: 0, worldSpawnT: 0,
   mapElement: null, // element realm theme for the current wave (waves 1-20)
@@ -335,8 +337,8 @@ function currentTheme() {
 
 const slotCap = () => game.player.stats.maxSlots || MAX_SPELL_SLOTS;
 
-// +20% required XP per level, compounding
-const xpNeeded = lvl => Math.round(10 * Math.pow(1.2, lvl - 1));
+// XP requirements ramp up harder later so late-game level-ups are earned.
+const xpNeeded = lvl => Math.round(12 * Math.pow(1.32, lvl - 1) + Math.max(0, lvl - 6) ** 2 * 3);
 
 // ---------------------------------------------------------------------------
 // Floating text & particles
@@ -353,6 +355,16 @@ function burst(x, y, color, n = 10, spd = 160, life = 0.45) {
   }
 }
 
+
+function spellDamageClass(id) {
+  if (!id || !SPELLS[id]) return null;
+  if (SPELLS[id].breath) return 'breath';
+  if (['fireball', 'poison', 'meteor', 'nova'].includes(id)) return 'aoe';
+  if (['missile', 'frost', 'lightning', 'orbs'].includes(id)) return 'projectile';
+  if (['drain'].includes(id)) return 'single';
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Damage handling
 // ---------------------------------------------------------------------------
@@ -360,6 +372,10 @@ function hitEnemy(e, rawDmg, opts = {}) {
   if (e.dead) return { dmg: 0, crit: false };
   const p = game.player, st = p.stats;
   let dmg = rawDmg * st.dmgMult * (p.tempDmg || 1) * (opts.scale || 1);
+  const cls = spellDamageClass(opts.source);
+  if (cls && st.typeMult && st.typeMult[cls]) dmg *= st.typeMult[cls];
+  // Bloodhungry packs move faster but take extra damage.
+  if (e.bloodhungry) dmg *= 1.30;
   // Frozen Core: slowed enemies take more. Point-Blank Sigil: bonus up close.
   if (st.frostAmp && (e.slowAmt > 0 || opts.slow)) dmg *= 1 + st.frostAmp;
   if (st.pointBlank && dist2(p.x, p.y, e.x, e.y) <= 150 * 150) dmg *= 1 + st.pointBlank;
@@ -593,16 +609,7 @@ function damagePlayer(rawDmg, src, target) {
     if (game.coop) addText(p.x, p.y - 30, (p === game.player ? 'P1' : 'P2') + ' DOWN — revives next wave', '#ff6b6b', 18);
     if (livePlayers().length > 0) return; // a teammate is still alive
 
-    // everyone is down — retry the wave, or end the run
-    if (game.opt.replayFails) {
-      game.deaths = (game.deaths || 0) + 1;
-      sfx('hurt');
-      const w = game.wave;
-      startWave(w);
-      reviveAll();
-      addText(W / 2, H / 2 - 30, 'WAVE FAILED — RETRYING', '#ff6b6b', 26);
-      return;
-    }
+    // everyone is down — show the death screen instead of restarting the round.
     sfx('death');
     clearSave(); // the run is over
     const hlId = recordScore(false);
@@ -1298,10 +1305,10 @@ function updateFountains(dt) {
         t: 0, dur: rand(0.4, 0.8), color: f.ft.color, r: rand(1.5, 3),
       });
     }
-    // must stand in the fountain and drain it for 2 seconds
+    // must stand in the fountain and drain it for 1.34 seconds (33% faster)
     if (!f.used && dist2(f.x, f.y, p.x, p.y) <= (p.r + 20) ** 2) {
       f.drain = (f.drain || 0) + dt;
-      if (f.drain >= 2) consumeFountain(f);
+      if (f.drain >= 1.34) consumeFountain(f);
     } else {
       f.drain = Math.max(0, (f.drain || 0) - dt * 1.5); // refill slowly if you step away
     }
@@ -1362,7 +1369,7 @@ function updateWorldSpawns(dt) {
     } else if (ws.kind === 'mine') {
       if (on) {
         ws.prog += dt;
-        if (ws.prog >= 5) { grantMineItem(ws); ws.used = true; }
+        if (ws.prog >= 3.35) { grantMineItem(ws); ws.used = true; }
       } else {
         ws.prog = Math.max(0, ws.prog - dt * 0.5); // slowly lose progress if you step off
       }
@@ -1402,6 +1409,19 @@ function updateHazards(dt) {
       y: clamp(p.y + Math.sin(a) * r, WALL + 40, H - WALL - 40),
       radius: rand(75, 100), t: 0, delay: 1.2,
       dmg: Math.round((8 + game.wave * 1.4) * (1 + (game.danger || 0))), color: '#ff44aa',
+    });
+  }
+}
+
+function updateAntiCampSpell(dt) {
+  if (game.state !== 'playing') return;
+  game.antiCampT -= dt;
+  if (game.antiCampT > 0) return;
+  game.antiCampT = 3;
+  for (const p of livePlayers()) {
+    game.zones.push({
+      x: clamp(p.x, WALL + 35, W - WALL - 35), y: clamp(p.y, WALL + 35, H - WALL - 35),
+      radius: 46, t: 0, delay: 1.05, dmg: Math.max(4, Math.round((3 + game.wave * 0.6) * (1 + (game.danger || 0) / 2))), color: '#ff3344',
     });
   }
 }
@@ -1565,6 +1585,7 @@ function updateWorld(dt) {
 
 function updateZones(dt) {
   for (const z of game.zones) {
+    if (!z.castExtended) { z.delay += 1; z.castExtended = true; }
     z.t += dt;
     if (z.t >= z.delay && !z.done) {
       z.done = true;
@@ -1679,6 +1700,7 @@ function startWave(n) {
   game.worldSpawns = [];
   game.dmgMeter = {};
   game.hazardT = 5; // grace period before the first arcane storm
+  game.antiCampT = 3;
   game.castQueue = [];
   game.fountains = [];
   game.fountainsSpawned = 0;
@@ -1937,12 +1959,6 @@ function renderSettings() {
   }
   el.appendChild(tr);
 
-  // --- Gameplay ---
-  section('Gameplay');
-  row('Replay failed waves', game.opt.replayFails ? 'ON' : 'OFF', !!game.opt.replayFails, () => {
-    game.opt.replayFails = !game.opt.replayFails; saveOpts(); renderSettings();
-  });
-
   // --- Readability ---
   section('Readability');
   for (const s of SETTINGS) {
@@ -2100,11 +2116,15 @@ function computeScore(dps, kills, wave, won) {
 function recordScore(won) {
   const dps = game.runTime > 0 ? game.totalDmg / game.runTime : 0;
   const char = (game.player && game.player.charId) || '?';
+  const nickEl = document.getElementById('score-name');
+  let nick = (nickEl && nickEl.value.trim()) || localStorage.getItem('wavywizards-nick') || '';
+  if (!nick && window.prompt) nick = (window.prompt('Nickname for highscore?', '') || '').trim();
+  if (nick) { try { localStorage.setItem('wavywizards-nick', nick.slice(0, 18)); } catch (e) { /* private */ } }
   const entry = {
     id: Date.now() + '-' + Math.floor(Math.random() * 1e6),
     score: computeScore(dps, game.kills, game.wave, won),
     dps: Math.round(dps), kills: game.kills, wave: game.wave,
-    char, won: !!won, endless: !!game.endless, date: Date.now(),
+    char, nick: nick.slice(0, 18), won: !!won, endless: !!game.endless, date: Date.now(),
   };
   const scores = loadScores();
   scores.push(entry);
@@ -2123,7 +2143,7 @@ function scoreboardHTML(highlightId) {
   let rows = '';
   scores.forEach((s, i) => {
     const charDef = CHARACTERS.find(c => c.id === s.char);
-    const who = charDef ? charDef.name : s.char;
+    const who = s.nick || (charDef ? charDef.name : s.char);
     const rank = MEDALS[i] || (i + 1);
     const hl = s.id === highlightId ? ' class="sb-hl"' : '';
     const flag = s.won ? ' 🏆' : '';
@@ -2300,7 +2320,7 @@ function renderDangerSelect() {
   DANGER_LEVELS.forEach((d, i) => {
     const btn = document.createElement('button');
     btn.className = 'danger-btn' + (i === dangerLevel ? ' on' : '');
-    btn.textContent = d.mod === 0 ? '0%' : `+${Math.round(d.mod * 100)}%`;
+    btn.textContent = String(i);
     btn.title = `${d.name} — ${d.desc}`;
     btn.onclick = () => {
       dangerLevel = i;
@@ -2355,11 +2375,7 @@ function showCharSelect() {
 function renderStartOptions() {
   const el = document.getElementById('start-options');
   if (!el) return;
-  const on = !!game.opt.replayFails;
-  el.innerHTML = `<button id="opt-replay" class="danger-btn${on ? ' on' : ''}">↻ Replay failed waves: ${on ? 'ON' : 'OFF'}</button>`;
-  document.getElementById('opt-replay').onclick = () => {
-    game.opt.replayFails = !game.opt.replayFails; saveOpts(); renderStartOptions();
-  };
+  el.innerHTML = '<p class="subtitle small-hint">Hover a danger level to preview enemy health and damage scaling.</p>';
 }
 
 function showSpellSelect() {
@@ -2582,6 +2598,7 @@ function frame(now) {
     updateZones(dt);
     updateWalls(dt);
     updateWorld(dt);
+  updateAntiCampSpell(dt);
     updateTornadoes(dt);
     updateWorldSpawns(dt);
     updateSpawning(dt);
@@ -2863,6 +2880,25 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
+
+  // charge telegraphs — red lanes show where lunging enemies will travel.
+  for (const e of game.enemies) {
+    if (!e.chargeTele || e.windup <= 0 || e.dead) continue;
+    const pulse = 0.5 + Math.sin(performance.now() / 80) * 0.5;
+    ctx.save();
+    ctx.globalAlpha = 0.35 + pulse * 0.35;
+    ctx.strokeStyle = '#ff3344';
+    ctx.lineWidth = (e.boss ? 12 : 7) * (game.opt.bigTele ? 1.35 : 1);
+    ctx.setLineDash([14, 9]);
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(e.chargeTele.x1, e.chargeTele.y1); ctx.lineTo(e.chargeTele.x2, e.chargeTele.y2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.12;
+    ctx.lineWidth += 12;
+    ctx.beginPath(); ctx.moveTo(e.chargeTele.x1, e.chargeTele.y1); ctx.lineTo(e.chargeTele.x2, e.chargeTele.y2); ctx.stroke();
+    ctx.restore();
+  }
+
   // world-event hazards — they DAMAGE you, so they share the hostile language:
   // a red border (dashed while telegraphing) + ⚠, with a faint element tint fill.
   if (game.worldEvent) {
@@ -2968,10 +3004,10 @@ function render() {
     // bubbling spout
     ctx.fillStyle = `rgba(107, 232, 255, ${0.6 + pulse * 0.4})`;
     ctx.beginPath(); ctx.arc(f.x, f.y - 10 - pulse * 5, 3.5, 0, Math.PI * 2); ctx.fill();
-    // drain progress (must hold for 2s)
+    // drain progress (must hold for 1.34s)
     if (f.drain > 0) {
       ctx.strokeStyle = '#6be8ff'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(f.x, f.y, 24, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp(f.drain / 2, 0, 1)); ctx.stroke();
+      ctx.beginPath(); ctx.arc(f.x, f.y, 24, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp(f.drain / 1.34, 0, 1)); ctx.stroke();
       ctx.fillStyle = '#bdf3ff'; ctx.font = 'bold 10px "Segoe UI", sans-serif'; ctx.textAlign = 'center';
       ctx.fillText('draining…', f.x, f.y - 28);
     }
@@ -3376,7 +3412,7 @@ function drawHUD() {
   if (game.danger > 0) {
     ctx.fillStyle = '#ff6b6b';
     ctx.font = 'bold 13px "Segoe UI", sans-serif';
-    ctx.fillText(`☠ +${Math.round(game.danger * 100)}%`, W / 2 + 130, 44);
+    ctx.fillText(`☠ Danger ${dangerLevel}`, W / 2 + 130, 44);
   }
   // wave modifier banner
   if (game.modifier) {
