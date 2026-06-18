@@ -8,6 +8,16 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
+
+function updateUiScale() {
+  const scale = Math.max(0.55, Math.min(1, Math.min(window.innerWidth / W, window.innerHeight / H)));
+  document.documentElement.style.setProperty('--ui-scale', scale.toFixed(3));
+  document.documentElement.style.setProperty('--ui-inv-scale', (1 / scale).toFixed(3));
+  document.documentElement.style.setProperty('--ui-width', `${window.innerWidth / scale}px`);
+  document.documentElement.style.setProperty('--ui-height', `${window.innerHeight / scale}px`);
+}
+window.addEventListener('resize', updateUiScale);
+updateUiScale();
 const WALL = 26; // arena wall thickness
 
 // ---------------------------------------------------------------------------
@@ -1991,23 +2001,36 @@ function togglePause() {
 function renderKeybinds() {
   const el = document.getElementById('keybinds');
   if (!el) return;
-  let html = '<h3>Spell Hotkeys</h3>';
-  for (let i = 0; i < MAX_SPELL_SLOTS; i++) {
-    const sp = game.player.spells[i];
-    const def = sp ? SPELLS[sp.id] : null;
-    let name = def ? `${def.icon} ${spellName(sp)}` : '<i>empty slot</i>';
-    if (sp && sp.id === 'orbs') name += ' <i>(passive)</i>';
-    else if (sp && sp.auto === false) name += ' <i>(manual)</i>';
-    const label = rebindSlot === i ? 'press a key…' : keyLabel(slotKeys[i]);
-    html += `<div class="bind-row">
-      <span class="bind-name">${name}</span>
-      <button class="key-btn${rebindSlot === i ? ' listening' : ''}" data-slot="${i}">${label}</button>
-    </div>`;
-  }
-  el.innerHTML = html;
-  el.querySelectorAll('.key-btn').forEach(b => {
-    b.onclick = () => { rebindSlot = +b.dataset.slot; renderKeybinds(); };
-  });
+  const p = game.player;
+  const s = p.stats;
+  const ch = CHARACTERS.find(c => c.id === p.charId) || { icon: '🧙', name: p.charName || 'Wizard' };
+  const runDps = game.runTime > 0 ? game.totalDmg / game.runTime : 0;
+  const waveDps = game.waveTime > 0 ? Object.values(game.dmgMeter).reduce((a, b) => a + b, 0) / game.waveTime : 0;
+  const pct = v => `${Math.round(v * 100)}%`;
+  const rows = [
+    ['Wave', `${game.wave}${game.wave > 20 ? ' (Endless)' : ''}`],
+    ['Wave time', `${Math.floor(game.waveTime)}s`],
+    ['Gold', game.gold],
+    ['Kills', game.kills],
+    ['Enemies alive', liveEnemies().length],
+    ['Run damage', Math.round(game.totalDmg)],
+    ['Run DPS', runDps.toFixed(1)],
+    ['Wave DPS', waveDps.toFixed(1)],
+    ['Character', `${ch.icon} ${ch.name}`],
+    ['HP', `${Math.ceil(p.hp)} / ${Math.round(s.maxHp)}`],
+    ['Shield', Math.round(p.shield || 0)],
+    ['Armor', s.armor],
+    ['Regen', `${s.regen.toFixed(1)}/s`],
+    ['Damage', pct(s.dmgMult)],
+    ['Cooldowns', pct(s.cdMult)],
+    ['Move speed', pct(s.speedMult)],
+    ['Crit', `${Math.round(s.crit * 100)}% ×${s.critMult.toFixed(1)}`],
+    ['Pickup range', `${Math.round(s.pickup)}px`],
+    ['Spell slots', `${p.spells.length} / ${slotCap()}`],
+  ];
+  el.innerHTML = `<h3>Current Run</h3><div class="pause-stat-grid">${
+    rows.map(([k, v]) => `<div class="pause-stat-k">${k}</div><div class="pause-stat-v">${v}</div>`).join('')
+  }</div>`;
 }
 
 // ---------------------------------------------------------------------------

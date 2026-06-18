@@ -1,3 +1,10 @@
+:root {
+  --ui-scale: 1;
+  --ui-inv-scale: 1;
+  --ui-width: 100vw;
+  --ui-height: 100vh;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {
@@ -27,7 +34,12 @@ canvas#game {
 
 /* ---------- overlays ---------- */
 .overlay {
-  position: absolute; inset: 0;
+  position: absolute;
+  top: 50%; left: 50%;
+  width: var(--ui-width);
+  height: var(--ui-height);
+  transform: translate(-50%, -50%) scale(var(--ui-scale));
+  transform-origin: center;
   display: none;
   flex-direction: column;
   align-items: center;
@@ -336,8 +348,16 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 .move-btn:hover:not(:disabled) { border-color: #5fb4ff; }
 .move-btn:disabled { opacity: 0.3; cursor: default; }
 
-/* ---------- keybinds (pause menu) ---------- */
+/* ---------- pause stats ---------- */
 #keybinds { min-width: 320px; }
+.pause-stat-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(120px, 1fr);
+  gap: 5px 18px;
+  text-align: left;
+}
+.pause-stat-k { color: #8be0ff; font-size: 13px; }
+.pause-stat-v { color: #eaf2ff; font-size: 13px; font-weight: 700; text-align: right; }
 .bind-row {
   display: flex; justify-content: space-between; align-items: center;
   padding: 5px 2px;
