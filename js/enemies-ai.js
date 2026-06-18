@@ -81,6 +81,8 @@ function spawnEnemy(type, x, y, opts) {
   };
   // the 'charger' twin trades its radial bursts for melee pressure
   if (e.boss && e.variant === 'charger') e.ranged = null;
+  // Bats should threaten charges earlier than other ability users.
+  if (type === 'bat' || type === 'yellowbat' || type === 'redbat') e.abilityT = rand(1, 2.5);
   // Danger 10: the Archlich rises pre-shielded.
   if (e.boss && game.danger >= 10) { e.eshield = Math.round(e.maxHp * 0.4); }
   game.enemies.push(e);
@@ -172,22 +174,22 @@ function updateSpawning(dt) {
 function startEnemyAbility(e, p, d) {
   switch (e.type) {
     case 'bat': // purple bat: straight charge after a 1s lane indicator
-      if (d > 70 && d < 380) {
+      if (d > 70 && d < 505) {
         e.windup = 1.0; e.pending = 'batStraight';
         e.chargeX = (p.x - e.x) / d; e.chargeY = (p.y - e.y) / d;
-        e.chargeTele = { type: 'line', color: e.color, x1: e.x, y1: e.y, x2: clamp(e.x + e.chargeX * 420, WALL + 20, W - WALL - 20), y2: clamp(e.y + e.chargeY * 420, WALL + 20, H - WALL - 20), t: e.windup };
+        e.chargeTele = { type: 'line', color: e.color, x1: e.x, y1: e.y, x2: clamp(e.x + e.chargeX * 560, WALL + 20, W - WALL - 20), y2: clamp(e.y + e.chargeY * 560, WALL + 20, H - WALL - 20), t: e.windup };
       }
-      else e.abilityT = 0.8;
+      else e.abilityT = 0.55;
       break;
     case 'yellowbat': { // yellow bat: zig-zag charge after a 1s path indicator
-      if (d > 80 && d < 420) {
+      if (d > 80 && d < 560) {
         e.windup = 1.0; e.pending = 'batZigzag';
         e.chargeX = (p.x - e.x) / d; e.chargeY = (p.y - e.y) / d;
         const px = -e.chargeY, py = e.chargeX;
         const pts = [];
         for (let i = 0; i <= 6; i++) {
-          const along = i * 62;
-          const side = (i % 2 === 0 ? -1 : 1) * 34;
+          const along = i * 83;
+          const side = (i % 2 === 0 ? -1 : 1) * 45;
           pts.push({
             x: clamp(e.x + e.chargeX * along + px * side, WALL + 20, W - WALL - 20),
             y: clamp(e.y + e.chargeY * along + py * side, WALL + 20, H - WALL - 20),
@@ -195,17 +197,17 @@ function startEnemyAbility(e, p, d) {
         }
         pts[0] = { x: e.x, y: e.y };
         e.chargeTele = { type: 'zigzag', color: e.color, points: pts, t: e.windup };
-      } else e.abilityT = 0.8;
+      } else e.abilityT = 0.55;
       break;
     }
     case 'redbat': { // red bat: circular charge after a 1s ring indicator
-      if (d > 80 && d < 460) {
+      if (d > 80 && d < 610) {
         e.windup = 1.0; e.pending = 'batCircle';
         const a = Math.atan2(e.y - p.y, e.x - p.x);
-        e.chargeCX = p.x; e.chargeCY = p.y; e.chargeRadius = clamp(d, 95, 150);
+        e.chargeCX = p.x; e.chargeCY = p.y; e.chargeRadius = clamp(d, 125, 200);
         e.chargeDir = Math.random() < 0.5 ? -1 : 1;
         e.chargeTele = { type: 'circle', color: e.color, x: p.x, y: p.y, r: e.chargeRadius, a, dir: e.chargeDir, t: e.windup };
-      } else e.abilityT = 0.8;
+      } else e.abilityT = 0.55;
       break;
     }
     case 'brute': { // wind up, then charge in a straight line
@@ -413,8 +415,8 @@ function triggerEnemyAbility(e, p, d) {
     e.charging = e.pending === 'batCircle' ? 1.1 : e.pending === 'batZigzag' ? 0.75 : 0.5;
     e.chargeMode = e.pending;
     e.chargeElapsed = 0;
-    e.chargeSpd = e.pending === 'batCircle' ? 420 : e.pending === 'batZigzag' ? 470 : 540;
-    e.abilityT = rand(3, 4.5);
+    e.chargeSpd = e.pending === 'batCircle' ? 560 : e.pending === 'batZigzag' ? 625 : 720;
+    e.abilityT = rand(2.25, 3.4);
   } else if (e.pending === 'charge') {
     e.charging = 0.55;
     e.chargeSpd = Math.max(320, e.spd * 5);
@@ -478,7 +480,7 @@ function updateEnemies(dt) {
       e.charging -= dt;
       if (e.charging <= 0) {
         e.chargeMode = null;
-        e.abilityT = e.type === 'bat' || e.type === 'yellowbat' || e.type === 'redbat' ? rand(3, 4.5) : e.boss ? rand(3, 4.5) : rand(5, 7);
+        e.abilityT = e.type === 'bat' || e.type === 'yellowbat' || e.type === 'redbat' ? rand(2.25, 3.4) : e.boss ? rand(3, 4.5) : rand(5, 7);
       }
     } else {
       e.abilityT -= dt;
