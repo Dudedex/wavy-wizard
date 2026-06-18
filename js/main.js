@@ -27,6 +27,13 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const randInt = (a, b) => Math.floor(rand(a, b + 1));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist2 = (ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay; return dx * dx + dy * dy; };
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const l2 = dx * dx + dy * dy || 1;
+  const t = clamp(((px - x1) * dx + (py - y1) * dy) / l2, 0, 1);
+  const x = x1 + dx * t, y = y1 + dy * t;
+  return Math.hypot(px - x, py - y);
+}
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 function weightedPick(pairs) {
@@ -281,6 +288,7 @@ const game = {
   shake: 0,
   dmgMeter: {}, showMeter: true, endless: false, danger: 0,
   zones: [], // telegraphed enemy ground attacks
+  enemyLasers: [], // thin enemy laser beams fired across the arena
   walls: [], // Warden barriers that block player movement
   hazardT: 0, // arcane storm timer
   antiCampT: 3, // periodic small targeted enemy spell that discourages standing still
@@ -1179,6 +1187,22 @@ function updateEnemyProjectiles(dt) {
   game.enemyProjectiles = game.enemyProjectiles.filter(pr => !pr.dead);
 }
 
+function updateEnemyLasers(dt) {
+  for (const l of game.enemyLasers) {
+    l.t += dt;
+    if (!l.hit && l.t > 0.04) {
+      for (const b of livePlayers()) {
+        if (distToSegment(b.x, b.y, l.x1, l.y1, l.x2, l.y2) <= b.r + 4) {
+          damagePlayer(l.dmg, 'laser eyes', b, { minDmg: 3 });
+          l.hit = true;
+          break;
+        }
+      }
+    }
+  }
+  game.enemyLasers = game.enemyLasers.filter(l => l.t < l.dur);
+}
+
 function updateClouds(dt) {
   for (const c of game.clouds) {
     c.t += dt;
@@ -1632,6 +1656,21 @@ function updateGems(dt) {
   for (const g of game.gems) {
     g.t += dt;
     const p = nearestPlayer(g.x, g.y) || game.player; // either body can vacuum/collect
+    if (g.endTarget === 'void') {
+      g.fade = (g.fade || 0) + dt;
+      g.vx *= Math.pow(0.2, dt); g.vy *= Math.pow(0.2, dt);
+      g.x += g.vx * dt; g.y += g.vy * dt;
+      if (g.fade >= 1.1) g.dead = true;
+      continue;
+    }
+    if (g.endTarget === 'budget') {
+      const tx = W - 100, ty = 80;
+      const d = Math.max(1, Math.hypot(tx - g.x, ty - g.y));
+      g.x += (tx - g.x) / d * 720 * dt;
+      g.y += (ty - g.y) / d * 720 * dt;
+      if (d < 14) { g.dead = true; game.budget = (game.budget || 0) + 1; addText(tx, ty - 12, 'Budget +1', '#8be0ff', 12); }
+      continue;
+    }
     const pickupR = p.stats.pickup;
     const d = Math.max(1, Math.hypot(p.x - g.x, p.y - g.y));
     if (g.vacuum || d < pickupR) {
@@ -1651,29 +1690,33 @@ function updateGems(dt) {
       if (g.hp) {
         p.hp = Math.min(p.stats.maxHp, p.hp + Math.round(g.hp * p.stats.healMult * HEAL_FACTOR));
       } else {
-        // fractional gold accumulates so percentage bonuses always pay out;
-        // higher danger yields +50% materials per +100% enemy power
-        let v = g.val * p.stats.matMult * (1 + (game.danger || 0) * 0.5);
-        // budget pool: each point doubles the next collected coin
-        if (game.budget >= 1) { v *= 2; game.budget -= 1; addText(g.x, g.y - 8, '×2', '#ffd454', 12); }
-        game.goldFrac = (game.goldFrac || 0) + v;
-        const whole = Math.floor(game.goldFrac);
-        if (whole > 0) { game.gold += whole; game.goldEarned += whole; game.goldFrac -= whole; }
-        game.xpFrac = (game.xpFrac || 0) + (game.modXpMult || 1);
-        const xw = Math.floor(game.xpFrac);
-        if (xw > 0) { game.xp += xw; game.xpFrac -= xw; }
+        collectGoldGem(g, p);
         sfx('pickup');
-        if (game.xp >= xpNeeded(game.level)) {
-          game.xp -= xpNeeded(game.level);
-          game.level++;
-          game.pendingLevelUps++;
-          addText(p.x, p.y - 34, 'LEVEL UP!', '#ffe96b', 20);
-          sfx('level');
-        }
       }
     }
   }
   game.gems = game.gems.filter(g => !g.dead);
+}
+
+function collectGoldGem(g, p) {
+  // fractional gold accumulates so percentage bonuses always pay out;
+  // higher danger yields +50% materials per +100% enemy power
+  let v = g.val * p.stats.matMult * (1 + (game.danger || 0) * 0.5);
+  // budget pool: each point doubles the next collected coin
+  if (game.budget >= 1) { v *= 2; game.budget -= 1; addText(g.x, g.y - 8, '×2', '#ffd454', 12); }
+  game.goldFrac = (game.goldFrac || 0) + v;
+  const whole = Math.floor(game.goldFrac);
+  if (whole > 0) { game.gold += whole; game.goldEarned += whole; game.goldFrac -= whole; }
+  game.xpFrac = (game.xpFrac || 0) + (game.modXpMult || 1);
+  const xw = Math.floor(game.xpFrac);
+  if (xw > 0) { game.xp += xw; game.xpFrac -= xw; }
+  if (game.xp >= xpNeeded(game.level)) {
+    game.xp -= xpNeeded(game.level);
+    game.level++;
+    game.pendingLevelUps++;
+    addText(p.x, p.y - 34, 'LEVEL UP!', '#ffe96b', 20);
+    sfx('level');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1697,6 +1740,7 @@ function startWave(n) {
   game.enemies = [];
   game.projectiles = [];
   game.enemyProjectiles = [];
+  game.enemyLasers = [];
   game.clouds = [];
   game.meteors = [];
   game.beams = [];
@@ -1828,21 +1872,26 @@ function endWave() {
   // doubling "budget" for the next coins you pick up, 34% is voided — and the
   // Gold Reclaimer item claws back 33% of the void per copy (up to 3).
   const coins = game.gems.filter(g => !g.hp).length;
-  const coinValue = p.stats.matMult * (1 + (game.danger || 0) * 0.5);
   const banked = Math.floor(coins * 0.33);
   const toBudget = Math.floor(coins * 0.33);
   let voided = coins - banked - toBudget;
   const reclaimPct = Math.min(1, 0.33 * (p.stats.reclaim || 0));
   const reclaimed = Math.floor(voided * reclaimPct);
   voided -= reclaimed;
-  const banks = Math.round((banked + reclaimed) * coinValue);
-  game.gold += banks; game.goldEarned += banks;
-  game.budget = (game.budget || 0) + toBudget;
+  const goldGems = game.gems.filter(g => !g.hp);
+  let collectLeft = banked + reclaimed;
+  let budgetLeft = toBudget;
+  for (const g of goldGems) {
+    if (collectLeft > 0) { g.endTarget = 'player'; g.vacuum = true; collectLeft--; }
+    else if (budgetLeft > 0) { g.endTarget = 'budget'; g.vacuum = false; budgetLeft--; }
+    else { g.endTarget = 'void'; g.fade = 0; }
+  }
+  for (const g of game.gems) if (g.hp) { g.endTarget = 'void'; g.fade = 0; }
 
   for (const e of game.enemies) burst(e.x, e.y, e.color, 6, 120, 0.35);
-  game.gems = [];
   game.enemies = [];
   game.enemyProjectiles = [];
+  game.enemyLasers = [];
   game.spawns = [];
   const bonus = 8 + game.wave;
   game.gold += bonus; game.goldEarned += bonus;
@@ -1850,8 +1899,8 @@ function endWave() {
   if (bossCountForWave(game.wave) > 0) game.pendingMightyBoosts++;
   addText(p.x, p.y - 64, `Wave clear! +${bonus} gold`, '#ffd454', 18);
   if (coins > 0) addText(p.x, p.y - 44, `Banked ${banked} · Budget +${toBudget} · Voided ${voided}`, '#9fb0c8', 14);
-
-  afterWaveCollected();
+  game.state = 'waveend';
+  game.waveEndTimer = 2.2;
 }
 
 function afterWaveCollected() {
@@ -2653,6 +2702,7 @@ function frame(now) {
     for (const pl of livePlayers()) { const save = game.player; game.player = pl; updateSpells(dt); game.player = save; }
     updateProjectiles(dt);
     updateEnemyProjectiles(dt);
+    updateEnemyLasers(dt);
     updateClouds(dt);
     updateMeteors(dt);
     updateFountains(dt);
@@ -3106,6 +3156,8 @@ function render() {
 
   // gems
   for (const g of game.gems) {
+    const ga = g.endTarget === 'void' ? Math.max(0, 1 - (g.fade || 0) / 1.1) : 1;
+    ctx.globalAlpha = ga;
     if (g.hp) {
       ctx.fillStyle = '#ff6b8a';
       ctx.font = 'bold 16px sans-serif';
@@ -3122,6 +3174,7 @@ function render() {
       ctx.fillRect(-2, -2, 4, 4);
       ctx.restore();
     }
+    ctx.globalAlpha = 1;
   }
 
   // enemies
@@ -3300,6 +3353,21 @@ function render() {
     ctx.beginPath(); ctx.arc(pr.x, pr.y, rr, 0, Math.PI * 2); ctx.fill();
     if (hc) ctx.stroke();
     ctx.shadowBlur = 0;
+  }
+  for (const l of game.enemyLasers) {
+    const a = 1 - l.t / l.dur;
+    ctx.save();
+    ctx.globalAlpha = 0.35 + a * 0.45;
+    ctx.strokeStyle = '#220006';
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
+    ctx.strokeStyle = l.color || '#ff3344';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = l.color || '#ff3344';
+    ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
+    ctx.restore();
   }
 
   // beams (lightning / drain)
@@ -3498,6 +3566,14 @@ function drawHUD() {
   ctx.font = 'bold 22px "Segoe UI", sans-serif';
   ctx.textAlign = 'right';
   ctx.fillText(`💰 ${game.gold}`, W - 40, 52);
+  ctx.font = 'bold 12px "Segoe UI", sans-serif';
+  ctx.fillStyle = 'rgba(10, 18, 34, 0.82)';
+  ctx.strokeStyle = '#5fb4ff';
+  ctx.lineWidth = 1.5;
+  ctx.fillRect(W - 164, 64, 124, 24);
+  ctx.strokeRect(W - 164, 64, 124, 24);
+  ctx.fillStyle = '#8be0ff';
+  ctx.fillText(`📦 Budget ×${Math.floor(game.budget || 0)}`, W - 48, 81);
 
   // wave + timer
   ctx.textAlign = 'center';

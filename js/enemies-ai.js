@@ -69,7 +69,7 @@ function spawnEnemy(type, x, y, opts) {
     splitsInto: def.splitsInto || null,
     elite: !!def.elite, boss: !!def.boss, shy: !!def.shy,
     flee: !!def.flee, drainShield: !!def.drainShield, warden: !!def.warden,
-    mirror: !!def.mirror, nuller: !!def.nuller,
+    mirror: !!def.mirror, nuller: !!def.nuller, laserEye: !!def.laserEye,
     bomber: !!def.bomber, blastR: def.blastR || 0, fuse: def.fuse || 0,
     reflect: 0, fleeT: def.flee ? 13 : 0,
     variant: opts.variant || null,
@@ -79,6 +79,14 @@ function spawnEnemy(type, x, y, opts) {
     wobble: rand(0, Math.PI * 2),
     dead: false,
   };
+  if (e.laserEye) {
+    e.borderSide = pick(['top', 'right', 'bottom', 'left']);
+    e.borderDir = Math.random() < 0.5 ? -1 : 1;
+    if (e.borderSide === 'top') e.y = WALL + e.r;
+    else if (e.borderSide === 'bottom') e.y = H - WALL - e.r;
+    else if (e.borderSide === 'left') e.x = WALL + e.r;
+    else e.x = W - WALL - e.r;
+  }
   // the 'charger' twin trades its radial bursts for melee pressure
   if (e.boss && e.variant === 'charger') e.ranged = null;
   // Bats should threaten charges earlier than other ability users.
@@ -366,6 +374,16 @@ function startEnemyAbility(e, p, d) {
       e.abilityT = phase >= 3 ? rand(2, 3.2) : phase >= 2 ? rand(3, 4.5) : rand(4, 6);
       break;
     }
+    case 'lazeye': { // border patrol that paints a thin laser across the map
+      e.windup = 0.8; e.pending = 'laser';
+      if (e.borderSide === 'top' || e.borderSide === 'bottom') {
+        e.chargeTele = { type: 'line', color: '#ff3344', x1: e.x, y1: WALL + 12, x2: e.x, y2: H - WALL - 12, t: e.windup };
+      } else {
+        e.chargeTele = { type: 'line', color: '#ff3344', x1: WALL + 12, y1: e.y, x2: W - WALL - 12, y2: e.y, t: e.windup };
+      }
+      e.abilityT = rand(2.6, 4.0);
+      break;
+    }
     case 'warden': { // raise a temporary ward that blocks the player's path
       const a = Math.atan2(p.y - e.y, p.x - e.x);
       game.walls.push({ x: clamp(p.x + Math.cos(a) * 60, WALL + 50, W - WALL - 50),
@@ -424,6 +442,10 @@ function triggerEnemyAbility(e, p, d) {
         dmg: e.dmg * 0.8, r: 6, life: 6, color: '#ff5577', boss: !!e.boss,
       });
     }
+    sfx('zap');
+  } else if (e.pending === 'laser') {
+    const tele = e.chargeTele;
+    if (tele) game.enemyLasers.push({ x1: tele.x1, y1: tele.y1, x2: tele.x2, y2: tele.y2, t: 0, dur: 0.38, dmg: e.dmg, color: '#ff3344', hit: false });
     sfx('zap');
   } else if (e.pending === 'detonate') {
     // the queued blast zone (pushed when the fuse lit) handles the damage & boom;
@@ -540,6 +562,21 @@ function updateEnemies(dt) {
     if (e.boss && e.charging <= 0) {
       if (d < 420) { mx = -mx; my = -my; }
       else if (d < 560) { mx = 0; my = 0; }
+    }
+
+    // Laze Eyes patrol only along the arena border.
+    if (e.laserEye) {
+      if (e.borderSide === 'top' || e.borderSide === 'bottom') {
+        mx = e.borderDir || 1; my = 0;
+        e.y = e.borderSide === 'top' ? WALL + e.r : H - WALL - e.r;
+        if (e.x <= WALL + e.r + 2) e.borderDir = 1;
+        if (e.x >= W - WALL - e.r - 2) e.borderDir = -1;
+      } else {
+        mx = 0; my = e.borderDir || 1;
+        e.x = e.borderSide === 'left' ? WALL + e.r : W - WALL - e.r;
+        if (e.y <= WALL + e.r + 2) e.borderDir = 1;
+        if (e.y >= H - WALL - e.r - 2) e.borderDir = -1;
+      }
     }
 
     // spitters keep shooting distance, shamans hide behind the horde

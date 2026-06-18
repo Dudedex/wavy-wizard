@@ -27,6 +27,7 @@ const ENEMY_TYPES = {
   // Hexer is a fragile back-line caster — keeps its distance and lobs hex bolts.
   caster:  { name: 'Hexer',    r: 13, hp: 28,  spd: 52,  dmg: 4,  color: '#c77bff', gems: 3,  shy: true,
              ranged: { range: 330, cd: 1.55, projSpd: 205, dmg: 7 } },
+  lazeye:  { name: 'Laze Eye', r: 15, hp: 42,  spd: 96,  dmg: 8,  color: '#ff3344', gems: 3,  laserEye: true },
   elite:   { name: 'Elite',   r: 32, hp: 260, spd: 112,  dmg: 20, color: '#ff5577', gems: 15, elite: true },
   boss:    { name: 'Archlich',r: 46, hp: 2200, spd: 70,  dmg: 26, color: '#aa66ff', gems: 60, boss: true,
              ranged: { range: 9999, cd: 2.45, projSpd: 190, dmg: 10 } },
@@ -52,5 +53,6 @@ function getWavePool(wave) {
   if (wave >= 9)  pool.push(['warden', 1.4]);
   if (wave >= 11) pool.push(['mirror', 1.4]);
   if (wave >= 12) pool.push(['nuller', 1.3]);
+  if (wave >= 10) pool.push(['lazeye', 1.2 + wave * 0.18]);
   return pool;
 }
