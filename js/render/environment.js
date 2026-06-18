@@ -159,10 +159,15 @@ function drawNaturalTerrain(th) {
     for (let i = 0; i < 18; i++) { const x = WALL + (i * 83) % aw, y = WALL + (i * 47) % ah; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 50, y + Math.sin(i) * 22); ctx.stroke(); }
   } else if (id === 'fire' || id === 'ember') {
     ctx.fillStyle = '#1a0c08'; ctx.fillRect(WALL, WALL, aw, ah);
-    for (let i = 0; i < 18; i++) {
-      const x = WALL + ((i * 71 + now * 8) % aw), y = WALL + ((i * 43) % ah);
-      ctx.strokeStyle = i % 3 ? 'rgba(120,54,28,0.5)' : 'rgba(255,86,34,0.45)'; ctx.lineWidth = i % 3 ? 2 : 4;
-      ctx.beginPath(); ctx.moveTo(x - 34, y); ctx.lineTo(x, y + 18); ctx.lineTo(x + 36, y - 8); ctx.stroke();
+    // Soft heat stains only; no angular marks behind the element logo.
+    for (let i = 0; i < 14; i++) {
+      const x = WALL + ((i * 83 + now * 4) % aw), y = WALL + ((i * 47) % ah);
+      const r = 34 + (i % 4) * 10;
+      const grad = ctx.createRadialGradient(x, y, 4, x, y, r);
+      grad.addColorStop(0, i % 3 ? 'rgba(120,54,28,0.13)' : 'rgba(255,86,34,0.10)');
+      grad.addColorStop(1, 'rgba(255,86,34,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
     }
   } else if (id === 'wind') {
     ctx.fillStyle = '#0b1b1a'; ctx.fillRect(WALL, WALL, aw, ah);
