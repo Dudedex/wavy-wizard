@@ -102,6 +102,8 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
   cursor: pointer;
 }
 .small-btn:hover:not(:disabled) { border-color: #5fb4ff; }
+#btn-quit-round { background: linear-gradient(180deg, #8a2b2b, #5a1d1d); color: #ffd9d9; border-color: #ff6b6b; }
+#btn-quit-round:hover:not(:disabled) { box-shadow: 0 0 16px rgba(255, 107, 107, 0.35); }
 .small-btn:disabled, .buy-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* ---------- cards ---------- */

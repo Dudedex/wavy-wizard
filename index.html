@@ -99,6 +99,7 @@
     <div id="keybinds" class="panel"></div>
     <p class="subtitle small-hint">In game: hotkeys cast spells, <b>Shift+hotkey</b> toggles auto-cast, <b>Tab</b> toggles the damage meter.</p>
     <button id="btn-pause-settings" class="small-btn">⚙ Settings</button>
+    <button id="btn-quit-round" class="small-btn danger-btn">Quit Round</button>
   </div>
 
   <!-- Game over -->
@@ -136,12 +137,12 @@
 <script src="js/data/items.js"></script>
 <script src="js/data/enemies.js"></script>
 <script src="js/data/world.js"></script>
-<script src="js/main.js"></script>
-<!-- systems & renderers called at runtime by the game loop -->
+<!-- systems & renderers must load before main starts the animation loop -->
 <script src="js/enemies-ai.js"></script>
 <script src="js/shop.js"></script>
 <script src="js/render/shades.js"></script>
 <script src="js/render/wizard.js"></script>
 <script src="js/render/environment.js"></script>
+<script src="js/main.js"></script>
 </body>
 </html>
