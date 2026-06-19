@@ -554,11 +554,17 @@ function nearbyEnemyCount(x, y, radius) {
 }
 
 function armorReduction(armor) {
-  const a = clamp(armor || 0, 0, 60);
-  if (a <= 10) return a * 0.04; // 10 armor = 40%
-  if (a <= 30) return 0.40 + (a - 10) * (0.35 / 20); // 30 armor = 75%
-  if (a <= 40) return 0.75 + (a - 30) * 0.01; // 40 armor = 85%
-  return Math.min(0.90, 0.85 + (a - 40) * (0.05 / 20)); // 60 armor cap = 90%
+  const x = armor;
+  const target = 90;
+
+  // Fitted so:
+  // x = 0  -> 0
+  // x = 10 -> 50
+  // x = 20 -> 75
+  const a = 0.020336;
+  const b = 1.60073;
+
+  return target * (1 - Math.exp(-a * Math.pow(x, b)));
 }
 
 function armorReductionPct(armor) {
