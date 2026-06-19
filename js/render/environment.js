@@ -4,15 +4,30 @@
 // Arena background (gradient/dust/runes) + element structures + world spawns
 // ===========================================================================
 
-// Per-realm decoration pools, generated once.
-const bgFlakes  = Array.from({ length: 80 }, () => ({ x: rand(WALL, W - WALL), y: rand(WALL, H - WALL), r: rand(1.2, 3.2), sp: rand(20, 55), sway: rand(8, 22), ph: rand(0, Math.PI * 2) }));
-const bgEmbers  = Array.from({ length: 50 }, () => ({ x: rand(WALL, W - WALL), y: rand(WALL, H - WALL), r: rand(1, 2.6), sp: rand(28, 70), ph: rand(0, Math.PI * 2) }));
-const bgMotes   = Array.from({ length: 60 }, () => ({ x: rand(WALL, W - WALL), y: rand(WALL, H - WALL), r: rand(1, 2.4), sp: rand(10, 26), ph: rand(0, Math.PI * 2) }));
-const bgSnow    = Array.from({ length: 46 }, () => ({ x: rand(WALL + 20, W - WALL - 20), y: rand(WALL + 20, H - WALL - 20), r: rand(14, 34) }));
-const bgPebbles = Array.from({ length: 34 }, () => ({ x: rand(WALL + 20, W - WALL - 20), y: rand(WALL + 20, H - WALL - 20), r: rand(2.5, 6), c: pick(['#7a6038', '#8a6e44', '#5e4a2a']) }));
-const bgGrass   = Array.from({ length: 90 }, () => ({ x: rand(WALL + 10, W - WALL - 10), y: rand(WALL + 10, H - WALL - 10), h: rand(8, 18), lean: rand(-3, 3), c: pick(['#3f8a4a', '#4f9e54', '#357a40']) }));
-const bgTrees   = Array.from({ length: 18 }, () => ({ x: rand(WALL + 30, W - WALL - 30), y: rand(WALL + 30, H - WALL - 30), s: rand(0.7, 1.25), ph: rand(0, Math.PI * 2), c: pick(['#2f7a3a', '#3f8a4a', '#286833']) }));
-const bgRoots   = Array.from({ length: 24 }, () => ({ x: rand(WALL + 20, W - WALL - 20), y: rand(WALL + 20, H - WALL - 20), len: rand(28, 72), a: rand(-0.8, 0.8), c: pick(['#5a3f22', '#6a4a28', '#3f3020']) }));
+// Per-realm decoration pools, generated once. This renderer loads before
+// main.js so the animation loop can call drawBackground() immediately, but the
+// shared geometry/random helpers (W, H, WALL, rand, pick) are defined in
+// main.js. Defer pool creation until the first draw call so those bindings exist.
+let bgFlakes = null;
+let bgEmbers = null;
+let bgMotes = null;
+let bgSnow = null;
+let bgPebbles = null;
+let bgGrass = null;
+let bgTrees = null;
+let bgRoots = null;
+
+function ensureBackgroundPools() {
+  if (bgFlakes) return;
+  bgFlakes  = Array.from({ length: 80 }, () => ({ x: rand(WALL, W - WALL), y: rand(WALL, H - WALL), r: rand(1.2, 3.2), sp: rand(20, 55), sway: rand(8, 22), ph: rand(0, Math.PI * 2) }));
+  bgEmbers  = Array.from({ length: 50 }, () => ({ x: rand(WALL, W - WALL), y: rand(WALL, H - WALL), r: rand(1, 2.6), sp: rand(28, 70), ph: rand(0, Math.PI * 2) }));
+  bgMotes   = Array.from({ length: 60 }, () => ({ x: rand(WALL, W - WALL), y: rand(WALL, H - WALL), r: rand(1, 2.4), sp: rand(10, 26), ph: rand(0, Math.PI * 2) }));
+  bgSnow    = Array.from({ length: 46 }, () => ({ x: rand(WALL + 20, W - WALL - 20), y: rand(WALL + 20, H - WALL - 20), r: rand(14, 34) }));
+  bgPebbles = Array.from({ length: 34 }, () => ({ x: rand(WALL + 20, W - WALL - 20), y: rand(WALL + 20, H - WALL - 20), r: rand(2.5, 6), c: pick(['#7a6038', '#8a6e44', '#5e4a2a']) }));
+  bgGrass   = Array.from({ length: 90 }, () => ({ x: rand(WALL + 10, W - WALL - 10), y: rand(WALL + 10, H - WALL - 10), h: rand(8, 18), lean: rand(-3, 3), c: pick(['#3f8a4a', '#4f9e54', '#357a40']) }));
+  bgTrees   = Array.from({ length: 18 }, () => ({ x: rand(WALL + 30, W - WALL - 30), y: rand(WALL + 30, H - WALL - 30), s: rand(0.7, 1.25), ph: rand(0, Math.PI * 2), c: pick(['#2f7a3a', '#3f8a4a', '#286833']) }));
+  bgRoots   = Array.from({ length: 24 }, () => ({ x: rand(WALL + 20, W - WALL - 20), y: rand(WALL + 20, H - WALL - 20), len: rand(28, 72), a: rand(-0.8, 0.8), c: pick(['#5a3f22', '#6a4a28', '#3f3020']) }));
+}
 
 
 function drawGroundTree(g, x, y, s, leaf, alpha = 1) {
@@ -315,6 +330,7 @@ function drawElementMapLogo(th, cx, cy, now) {
 
 // Themed arena backdrop: natural terrain, a single element logo, and realm assets.
 function drawBackground() {
+  ensureBackgroundPools();
   const th = currentTheme();
   ctx.fillStyle = th.bg;
   ctx.fillRect(-30, -30, W + 60, H + 60);

@@ -234,7 +234,7 @@ for (const id in SPELLS) SPELLS[id].elements = SPELL_ELEMENTS[id] || [];
 const ENCHANTS = {
   splash:    { name: 'Splash',    icon: '💥', desc: 'Hits explode for 50% damage — explosions chain on kills' },
   reach:     { name: 'Reach',     icon: '🔭', desc: '+40% range, +30% area, +30% zone duration' },
-  vampiric:  { name: 'Vampiric',  icon: '🩸', desc: 'Heal 10% of damage — overheal becomes shield' },
+  vampiric:  { name: 'Vampiric',  icon: '🩸', desc: 'Heal 10% of damage dealt' },
   echo:      { name: 'Echo',      icon: '🔁', desc: '40% to cast again (60% damage, crits on its own)' },
   frostbite: { name: 'Frostbite', icon: '❄️', desc: 'Slow 30% — slowed enemies shatter on death' },
 };
