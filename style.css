@@ -295,13 +295,18 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 /* ---------- shop layout ---------- */
 #shop-layout {
   display: flex; gap: 20px; align-items: flex-start; justify-content: center;
-  width: 96%; max-width: 1400px;
+  width: 96%; max-width: 1580px;
 }
 /* Fixed-width columns so the shop never reflows horizontally as panel/offer
    content changes (legendary panel appearing, longer stat lines, etc.). */
-#shop-main { display: flex; flex-direction: column; gap: 16px; align-items: center; flex: 0 0 852px; width: 852px; }
-#shop-stats, #shop-owned { flex: 0 0 224px; width: 224px; min-width: 224px; max-width: 224px; }
-#shop-offers { width: 100%; min-height: 264px; }
+#shop-main { display: flex; flex-direction: column; gap: 16px; align-items: center; flex: 0 0 970px; width: 970px; }
+#shop-stats { flex: 0 0 224px; width: 224px; min-width: 224px; max-width: 224px; }
+#shop-owned { flex: 0 0 320px; width: 320px; min-width: 320px; max-width: 320px; }
+#shop-offers { width: 100%; min-height: 336px; }
+#shop-offers .card {
+  width: 230px;
+  min-height: 336px;
+}
 #shop-gold { font-size: 24px; font-weight: 700; color: #ffd454; }
 
 .panel {
