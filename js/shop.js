@@ -201,6 +201,7 @@ function refreshShopIfRoundBoughtOut() {
 
 function offerPrice(offer) {
   if (offer.kind === 'event' || offer.kind === 'lastresort') return 0; // these price themselves
+  if (offer.kind === 'item' && offer.lockedPrice) return offer.lockedPrice;
   // spell prices climb with the wave too (items already scale via itemPrice);
   // the rise steepens in the late/endless game
   const spellWaveMult = 1 + (game.wave - 1) * 0.12 + Math.max(0, game.wave - 8) * 0.08;
@@ -409,7 +410,14 @@ function renderShop() {
     lockBtn.title = offer.locked
       ? 'Unlock — this offer will be rerolled normally'
       : 'Lock — keep this offer through rerolls and into the next shop';
-    lockBtn.onclick = () => { offer.locked = !offer.locked; sfx('shopLock'); renderShop(); };
+    lockBtn.onclick = () => {
+      offer.locked = !offer.locked;
+      if (offer.kind === 'item') {
+        if (offer.locked) offer.lockedPrice = offerPrice(offer);
+        else delete offer.lockedPrice;
+      }
+      sfx('shopLock'); renderShop();
+    };
     card.appendChild(lockBtn);
     const btn = document.createElement('button');
     btn.className = 'buy-btn';

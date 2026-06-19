@@ -221,7 +221,7 @@ function freshPlayer(charDef, starterSpell) {
     stormCharge: 0, echoCount: 0, // Storm Battery charges / Echo Lens cadence
     invuln: 0, hurtFlash: 0,
     moveX: 0, moveY: 0,
-    procs: [], buffs: [], tempDmg: 1, tempSpd: 1,
+    procs: [], buffs: [], spellVulnStacks: [], tempDmg: 1, tempSpd: 1,
     items: [], // purchased items, for the shop display { id, n }
     lastResort: true, // once per game, survive lethal damage at 1 HP
     lastResortType: 'basic', // upgraded at the altar after it breaks
@@ -431,7 +431,7 @@ function hitEnemy(e, rawDmg, opts = {}) {
     e.kx = (e.x - p.x) / d * opts.knock;
     e.ky = (e.y - p.y) / d * opts.knock;
   }
-  if (opts.heal) healPlayer(Math.round(dmg * opts.heal), opts.vampiric);
+  if (opts.heal) healPlayer(Math.round(dmg * opts.heal));
   if (e.hp <= 0) {
     if (opts.source && SPELLS[opts.source]) game.masteryAcc[opts.source] = (game.masteryAcc[opts.source] || 0) + 1; // spell XP per kill
     // Storm Battery: a Chain Lightning kill stores a charge for the next cast
@@ -444,22 +444,13 @@ function hitEnemy(e, rawDmg, opts = {}) {
 // Global incoming-healing multiplier — all HP restoration is at half strength.
 const HEAL_FACTOR = 0.5;
 
-function healPlayer(amount, overflowShield) {
+function healPlayer(amount) {
   const p = game.player;
   const total = amount * p.stats.healMult * HEAL_FACTOR;
   const before = p.hp;
   p.hp = Math.min(p.stats.maxHp, p.hp + total);
   const got = Math.round(p.hp - before);
   if (got >= 1) { addText(p.x, p.y - p.r - 12, '+' + got, '#7fe08f', 14); sfx('heal'); }
-  // Vampiric enchant: overheal becomes a temporary shield (capped).
-  if (overflowShield) {
-    const spill = total - (p.hp - before);
-    if (spill >= 1) {
-      const cap = Math.max(p.shieldCap, Math.round(p.stats.maxHp * 0.5));
-      p.shieldCap = cap;
-      p.shield = Math.min(cap, p.shield + spill);
-    }
-  }
 }
 
 function killEnemy(e, killer) {
@@ -588,7 +579,9 @@ function damagePlayer(rawDmg, src, target, opts) {
   if (p.downed || p.invuln > 0 || game.state !== 'playing') return;
   const st = p.stats;
   if (src) game.lastHurtBy = src; // remember the most recent damage source (cause of death)
-  const incoming = rawDmg * (game.modDmgTaken || 1);
+  p.spellVulnStacks = (p.spellVulnStacks || []).filter(t => t > 0).slice(-20);
+  const spellVulnMult = 1 + p.spellVulnStacks.length * 0.10;
+  const incoming = rawDmg * (game.modDmgTaken || 1) * spellVulnMult;
   const reduced = incoming * armorDamageMult(effectiveArmorFor(p));
   let dmg = Math.max(opts.minDmg || 1, Math.ceil(reduced));
   if (p.shield > 0) {
@@ -613,6 +606,10 @@ function damagePlayer(rawDmg, src, target, opts) {
       }
       game.novas.push({ x: p.x, y: p.y, t: 0, dur: 0.3, radius, color: '#fff3b0' });
     }
+  }
+  if (opts.spellHit) {
+    p.spellVulnStacks = (p.spellVulnStacks || []).filter(t => t > 0).slice(-19);
+    p.spellVulnStacks.push(3);
   }
   p.invuln = 0.35;
   if (p.hp <= 0) {
@@ -676,14 +673,49 @@ function reviveAll() {
   if (game.coop && game.p2) { game.player.x = W / 2 - 60; game.player.y = H / 2; game.p2.x = W / 2 + 60; game.p2.y = H / 2; }
 }
 
-// Replay the wave that was just lost, keeping the current build, gold and items.
+function plainClone(v) {
+  return JSON.parse(JSON.stringify(v));
+}
+
+function roundSnapshot() {
+  return plainClone({
+    wave: game.wave, waveTime: game.waveTime, waveDur: game.waveDur,
+    gold: game.gold, xp: game.xp, level: game.level, budget: game.budget,
+    pendingLevelUps: game.pendingLevelUps, kills: game.kills,
+    totalDmg: game.totalDmg, runTime: game.runTime, runDmg: game.runDmg,
+    goldEarned: game.goldEarned, bestWave: game.bestWave, lastHurtBy: game.lastHurtBy,
+    debtHpMult: game.debtHpMult, debtSpdMult: game.debtSpdMult, discountBuys: game.discountBuys, arcaneLoan: game.arcaneLoan,
+    masteryAcc: game.masteryAcc, masteryLvl: game.masteryLvl, masteryMods: game.masteryMods, pendingMastery: game.pendingMastery,
+    player: game.player, p2: game.p2,
+    realmSchedule: game.realmSchedule, mapElement: game.mapElement,
+    modifier: game.modifier, modGemMult: game.modGemMult, modXpMult: game.modXpMult, modDmgTaken: game.modDmgTaken,
+    modCdMult: game.modCdMult, modSpawnMult: game.modSpawnMult, modFountainMult: game.modFountainMult,
+    modHazardMult: game.modHazardMult, modSwarm: game.modSwarm, pendingShopDiscount: game.pendingShopDiscount,
+    fountainAt: game.fountainAt, fountainMax: game.fountainMax, worldEvent: game.worldEvent,
+    worldEventPick: game.worldEventPick, worldEventAt: game.worldEventAt,
+  });
+}
+
+function restoreRoundSnapshot(s) {
+  Object.assign(game, plainClone(s));
+  game.enemies = []; game.projectiles = []; game.enemyProjectiles = []; game.enemyLasers = [];
+  game.clouds = []; game.meteors = []; game.beams = []; game.novas = []; game.familiars = [];
+  game.spawns = []; game.zones = []; game.walls = []; game.cones = []; game.tornadoes = [];
+  game.structures = []; game.structIce = 0; game.worldSpawns = [];
+  game.gems = []; game.particles = []; game.texts = [];
+  game.dmgMeter = {}; game.castQueue = []; game.fountains = []; game.fountainsSpawned = 0;
+  game.hazardT = 5; game.antiCampT = 3; game.dangerEliteDone = false; game.castCount = 0;
+  game.worldZones = []; game.worldTickT = 0; game.worldSpawnT = 0;
+  for (const b of allBodies()) { b.downed = false; b.hp = b.stats.maxHp; b.invuln = 1.2; b.spellVulnStacks = []; }
+  setState('playing');
+}
+
+// Replay the wave that was just lost, restoring the exact build/economy snapshot
+// from the beginning of the round.
 function retryWave() {
-  game.deaths = (game.deaths || 0) + 1;
-  for (const b of allBodies()) { b.downed = false; b.hp = b.stats.maxHp; }
+  if (game.roundStart) restoreRoundSnapshot(game.roundStart);
+  else startWave(game.wave);
   sfx('shield');
-  startWave(game.wave);            // re-rolls enemies/realm for this wave & sets state=playing
-  game.player.hp = game.player.stats.maxHp;
-  if (game.p2) game.p2.hp = game.p2.stats.maxHp;
   saveRun();
 }
 
@@ -1217,7 +1249,7 @@ function updateEnemyProjectiles(dt) {
     if (pr.life <= 0 || pr.x < WALL || pr.x > W - WALL || pr.y < WALL || pr.y > H - WALL) { pr.dead = true; continue; }
     for (const b of livePlayers()) {
       if (dist2(pr.x, pr.y, b.x, b.y) <= (pr.r + b.r) ** 2) {
-        damagePlayer(pr.dmg, 'enemy spellfire', b, { minDmg: pr.boss ? 5 : 3 });
+        damagePlayer(pr.dmg, 'enemy spellfire', b, { minDmg: pr.boss ? 5 : 3, spellHit: true });
         pr.dead = true;
         break;
       }
@@ -1232,7 +1264,7 @@ function updateEnemyLasers(dt) {
     if (!l.hit && l.t > 0.04) {
       for (const b of livePlayers()) {
         if (distToSegment(b.x, b.y, l.x1, l.y1, l.x2, l.y2) <= b.r + 4) {
-          damagePlayer(l.dmg, 'laser eyes', b, { minDmg: 3 });
+          damagePlayer(l.dmg, 'laser eyes', b, { minDmg: 3, spellHit: true });
           l.hit = true;
           break;
         }
@@ -1905,6 +1937,7 @@ function startWave(n) {
     const mt = ELEMENT_THEMES[game.mapElement];
     addText(W / 2, H / 2 + 8, `${mt.icon} ${mt.name} — ${ELEMENTS[game.mapElement].name} +2`, mt.wall, 18);
   }
+  game.roundStart = roundSnapshot();
 }
 
 function endWave() {
@@ -2171,7 +2204,7 @@ function saveRun() {
   const data = {
     wave: game.wave, gold: game.gold, xp: game.xp, level: game.level,
     pendingLevelUps: game.pendingLevelUps, kills: game.kills, endless: game.endless,
-    danger: game.danger || 0, budget: game.budget || 0,
+    danger: game.danger || 0, dangerLevel: game.dangerLevel || 0, budget: game.budget || 0,
     totalDmg: game.totalDmg || 0, runTime: game.runTime || 0,
     runDmg: game.runDmg || {}, goldEarned: game.goldEarned || 0, bestWave: game.bestWave || { wave: 0, dps: 0 },
     debtHpMult: game.debtHpMult || 1, debtSpdMult: game.debtSpdMult || 1, discountBuys: game.discountBuys || 0, arcaneLoan: !!game.arcaneLoan,
@@ -2229,6 +2262,8 @@ function resumeRun() {
   game.wave = d.wave;
   game.endless = !!d.endless || d.wave >= 20;
   game.danger = d.danger || 0;
+  game.dangerLevel = d.dangerLevel || DANGER_LEVELS.findIndex(x => x.mod === game.danger);
+  if (game.dangerLevel < 0) game.dangerLevel = 0;
   game.shopOffers = [];
   game.player.inputId = game.coop ? 'wasd' : 'both';
   game.p2 = game.coop ? makePlayer2() : null;
@@ -2237,13 +2272,32 @@ function resumeRun() {
 }
 
 function getWins() {
-  try { return JSON.parse(localStorage.getItem(WINS_KEY)) || []; } catch (e) { return []; }
+  return Object.keys(getWinRecords());
+}
+
+function getWinRecords() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(WINS_KEY));
+    if (Array.isArray(raw)) {
+      const migrated = {};
+      raw.forEach(id => { migrated[id] = 0; });
+      return migrated;
+    }
+    return raw && typeof raw === 'object' ? raw : {};
+  } catch (e) { return {}; }
+}
+
+function dangerColorForLevel(level) {
+  const max = Math.max(1, DANGER_LEVELS.length - 1);
+  const heat = clamp((level || 0) / max, 0, 1);
+  return `hsl(${Math.round(45 - heat * 45)}, ${Math.round(55 + heat * 40)}%, ${Math.round(60 - heat * 14)}%)`;
 }
 
 function recordWin(charId) {
-  const wins = getWins();
-  if (!wins.includes(charId)) {
-    wins.push(charId);
+  const wins = getWinRecords();
+  const level = game.dangerLevel || 0;
+  if (wins[charId] === undefined || level > wins[charId]) {
+    wins[charId] = level;
     try { localStorage.setItem(WINS_KEY, JSON.stringify(wins)); } catch (e) { /* private mode */ }
   }
 }
@@ -2521,13 +2575,18 @@ function showDangerSelect() {
 }
 
 function renderCharDetail(c) {
-  const won = getWins().includes(c.id);
+  const wins = getWinRecords();
+  const wonLevel = wins[c.id];
+  const won = wonLevel !== undefined;
+  const wonColor = dangerColorForLevel(wonLevel || 0);
   const el = document.getElementById('char-detail');
+  el.style.borderColor = won ? wonColor : '';
+  el.style.boxShadow = won ? `0 0 16px ${wonColor}55` : '';
   el.innerHTML =
     `<canvas class="cd-portrait" width="130" height="150"></canvas>
      <div class="cd-name">${c.name}${won ? ' 👑' : ''} <span class="cd-title">— ${c.title}</span></div>
      <div class="stat-lines">${signColor(c.perks.join('<br>'))}</div>
-     ${won ? '<div class="won-badge">Archlich slain</div>' : ''}`;
+     ${won ? `<div class="won-badge" style="border-color:${wonColor}; color:${wonColor}">Archlich slain · Danger ${wonLevel}</div>` : ''}`;
   // draw the chosen wizard large at the top of the panel
   const cv = el.querySelector('.cd-portrait');
   const g = cv.getContext('2d');
@@ -2541,9 +2600,15 @@ function showCharSelect() {
   if (!CHARACTERS.includes(selectedChar)) selectedChar = CHARACTERS[0];
   const row = document.getElementById('char-avatars');
   row.innerHTML = '';
+  const wins = getWinRecords();
   for (const c of CHARACTERS) {
     const tile = document.createElement('div');
     tile.className = 'char-avatar' + (c === selectedChar ? ' sel' : '');
+    if (wins[c.id] !== undefined) {
+      const wonColor = dangerColorForLevel(wins[c.id]);
+      tile.style.borderColor = wonColor;
+      tile.style.boxShadow = `0 0 14px ${wonColor}66`;
+    }
     const cv = document.createElement('canvas');
     cv.width = 72; cv.height = 86;
     const g = cv.getContext('2d');
@@ -2553,7 +2618,7 @@ function showCharSelect() {
     tile.appendChild(cv);
     const nm = document.createElement('div');
     nm.className = 'ca-name';
-    nm.innerHTML = c.name + (getWins().includes(c.id) ? ' 👑' : '');
+    nm.innerHTML = c.name + (wins[c.id] !== undefined ? ' 👑' : '');
     tile.appendChild(nm);
     const select = () => {
       selectedChar = c;
@@ -2596,6 +2661,7 @@ function beginRun(starterSpell) {
   game.shopOffers = [];
   game.endless = false;
   game.danger = DANGER_LEVELS[dangerLevel].mod;
+  game.dangerLevel = dangerLevel;
   game.masteryAcc = {}; game.masteryLvl = {}; game.masteryMods = {}; game.pendingMastery = [];
   // decide each wave's element realm up-front so the roadmap reveals it in advance
   game.realmSchedule = {};
@@ -2761,6 +2827,9 @@ function updateBody(dt, p) {
   if (game.walls.length) pushOutOfWalls(p);
   p.invuln = Math.max(0, p.invuln - dt);
   p.hurtFlash = Math.max(0, p.hurtFlash - dt);
+  if (p.spellVulnStacks && p.spellVulnStacks.length) {
+    p.spellVulnStacks = p.spellVulnStacks.map(t => t - dt).filter(t => t > 0).slice(-20);
+  }
   const regen = (p.stats.regen + 0.3 * game.elem.earth) * HEAL_FACTOR; // Earth meta-class: +regen
   if (regen > 0 && p.hp < p.stats.maxHp) {
     p.regenAcc = (p.regenAcc || 0) + regen * dt;
@@ -3794,6 +3863,15 @@ function drawHUD() {
       const max = entries[0][1];
       const mw = 235, rowH = 21, mx = W - mw - 36, my = 76;
       const mh = 42 + entries.length * rowH;
+      const meterPlayers = [game.player, game.p2].filter(Boolean);
+      const nearestMeterDist = meterPlayers.reduce((best, pl) => {
+        const dx = Math.max(mx - pl.x, 0, pl.x - (mx + mw));
+        const dy = Math.max(my - pl.y, 0, pl.y - (my + mh));
+        return Math.min(best, Math.hypot(dx, dy));
+      }, Infinity);
+      const meterAlpha = clamp(nearestMeterDist / 160, 0.08, 1);
+      ctx.save();
+      ctx.globalAlpha *= meterAlpha;
       ctx.fillStyle = 'rgba(10, 14, 28, 0.72)';
       ctx.fillRect(mx, my, mw, mh);
       ctx.strokeStyle = '#2a3a58';
@@ -3833,6 +3911,7 @@ function drawHUD() {
       ctx.fillText('TOTAL', mx + 8, ty + 15);
       ctx.textAlign = 'right';
       ctx.fillText(`${formatNum(total)} · ${formatNum(total / t)}/s`, mx + mw - 8, ty + 15);
+      ctx.restore();
     }
   }
 }
