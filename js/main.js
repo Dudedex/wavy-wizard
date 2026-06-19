@@ -3794,6 +3794,15 @@ function drawHUD() {
       const max = entries[0][1];
       const mw = 235, rowH = 21, mx = W - mw - 36, my = 76;
       const mh = 42 + entries.length * rowH;
+      const meterPlayers = [game.player, game.p2].filter(Boolean);
+      const nearestMeterDist = meterPlayers.reduce((best, pl) => {
+        const dx = Math.max(mx - pl.x, 0, pl.x - (mx + mw));
+        const dy = Math.max(my - pl.y, 0, pl.y - (my + mh));
+        return Math.min(best, Math.hypot(dx, dy));
+      }, Infinity);
+      const meterAlpha = clamp(nearestMeterDist / 160, 0.08, 1);
+      ctx.save();
+      ctx.globalAlpha *= meterAlpha;
       ctx.fillStyle = 'rgba(10, 14, 28, 0.72)';
       ctx.fillRect(mx, my, mw, mh);
       ctx.strokeStyle = '#2a3a58';
@@ -3833,6 +3842,7 @@ function drawHUD() {
       ctx.fillText('TOTAL', mx + 8, ty + 15);
       ctx.textAlign = 'right';
       ctx.fillText(`${formatNum(total)} · ${formatNum(total / t)}/s`, mx + mw - 8, ty + 15);
+      ctx.restore();
     }
   }
 }
