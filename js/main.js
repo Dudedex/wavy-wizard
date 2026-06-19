@@ -553,16 +553,34 @@ function nearbyEnemyCount(x, y, radius) {
   return n;
 }
 
+function armorReduction(armor) {
+  const a = clamp(armor || 0, 0, 60);
+  if (a <= 10) return a * 0.04; // 10 armor = 40%
+  if (a <= 30) return 0.40 + (a - 10) * (0.35 / 20); // 30 armor = 75%
+  if (a <= 40) return 0.75 + (a - 30) * 0.01; // 40 armor = 85%
+  return Math.min(0.90, 0.85 + (a - 40) * (0.05 / 20)); // 60 armor cap = 90%
+}
+
+function armorReductionPct(armor) {
+  return Math.round(armorReduction(armor) * 100);
+}
+
+function effectiveArmorFor(p) {
+  p = p || game.player;
+  let armor = p.stats.armor + 2 * game.elem.earth + (p.bonusArmor || 0); // Earth meta + temp wards
+  if (p.stats.duelist && nearbyEnemyCount(p.x, p.y, 300) < 5) armor += p.stats.duelist;
+  return Math.min(60, Math.max(0, armor));
+}
+
 function damagePlayer(rawDmg, src, target, opts) {
   opts = opts || {};
   const p = target || game.player;
   if (p.downed || p.invuln > 0 || game.state !== 'playing') return;
   const st = p.stats;
   if (src) game.lastHurtBy = src; // remember the most recent damage source (cause of death)
-  // Duelist Robe: bonus armor when outnumbered is low. Glass Arena: more dmg taken.
-  let armor = st.armor + 2 * game.elem.earth + (p.bonusArmor || 0); // Earth meta + temp wards
-  if (st.duelist && nearbyEnemyCount(p.x, p.y, 300) < 5) armor += st.duelist;
-  let dmg = Math.max(opts.minDmg || 1, Math.round(rawDmg * (game.modDmgTaken || 1) - armor));
+  const incoming = rawDmg * (game.modDmgTaken || 1);
+  const reduced = incoming * (1 - armorReduction(effectiveArmorFor(p)));
+  let dmg = Math.max(opts.minDmg || 1, Math.ceil(reduced));
   if (p.shield > 0) {
     const absorbed = Math.min(p.shield, dmg);
     p.shield -= absorbed;
@@ -1505,6 +1523,16 @@ function inWorldZone(z, x, y, rad) {
     if (z.gaps) for (const g of z.gaps) if (Math.abs(x - g.x) <= g.w / 2 - rad) return false; // safe gap
     return true;
   }
+  if (z.shape === 'fissure') return pointSegDist(x, y, z.x1, z.y1, z.x2, z.y2) <= z.width / 2 + rad;
+  return false;
+}
+
+function quakeSlowMultAt(p) {
+  if (!game.worldEvent || game.worldEvent.id !== 'quake') return 1;
+  for (const z of game.worldZones) {
+    if (z.t >= z.warn && inWorldZone(z, p.x, p.y, p.r)) return 0.5;
+  }
+  return 1;
 }
 
 // Horizontal segments of a tide band, skipping its safe gaps (for rendering).
@@ -1517,8 +1545,6 @@ function bandSegments(z) {
   }
   if (cur < W - WALL) segs.push([cur, W - WALL]);
   return segs;
-  if (z.shape === 'fissure') return pointSegDist(x, y, z.x1, z.y1, z.x2, z.y2) <= z.width / 2 + rad;
-  return false;
 }
 
 function worldDmg() {
@@ -2080,7 +2106,7 @@ function renderKeybinds() {
     ['Character', `${ch.icon} ${ch.name}`],
     ['HP', `${Math.ceil(p.hp)} / ${Math.round(s.maxHp)}`],
     ['Shield', Math.round(p.shield || 0)],
-    ['Armor', s.armor],
+    ['Armor', `${effectiveArmorFor(p)} (${armorReductionPct(effectiveArmorFor(p))}% DR)`],
     ['Regen', `${s.regen.toFixed(1)}/s`],
     ['Damage', pct(s.dmgMult)],
     ['Cooldowns', pct(s.cdMult)],
@@ -2642,7 +2668,7 @@ function updateBody(dt, p) {
     const len = Math.max(1, Math.hypot(dx, dy));
     const windMult = 1 + 0.05 * game.elem.wind; // Wind meta-class: +move speed
     const concMult = p.stats.concentrator ? 1.25 : 1; // Concentratos: faster on the move
-    const spd = 210 * p.stats.speedMult * (p.tempSpd || 1) * windMult * concMult;
+    const spd = 210 * p.stats.speedMult * (p.tempSpd || 1) * windMult * concMult * quakeSlowMultAt(p);
     p.x += (dx / len) * spd * dt;
     p.y += (dy / len) * spd * dt;
     p.moveX = dx / len;
@@ -2814,6 +2840,41 @@ function drawWorldHazard(z, id, pulse, ts) {
   }
 }
 
+function drawTopDangerOutlines() {
+  const pulse = 0.5 + Math.sin(performance.now() / 90) * 0.5;
+  const teleScale = game.opt.bigTele ? 1.5 : 1;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.setLineDash([10, 7]);
+  ctx.strokeStyle = '#ff3344';
+  ctx.globalAlpha = 0.72 + pulse * 0.28;
+  ctx.lineWidth = 3 * teleScale;
+  for (const z of game.zones) {
+    ctx.beginPath();
+    ctx.arc(z.x, z.y, z.radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (game.worldEvent) {
+    const ts = game.opt.bigTele ? 1.4 : 1;
+    ctx.lineWidth = 3 * ts;
+    for (const z of game.worldZones) {
+      const warning = z.t < z.warn;
+      ctx.setLineDash(warning ? [10, 7] : []);
+      if (z.shape === 'circle') {
+        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2); ctx.stroke();
+      } else if (z.shape === 'band') {
+        for (const [a, b] of bandSegments(z)) ctx.strokeRect(a, z.pos - z.width / 2, b - a, z.width);
+      } else if (z.shape === 'fissure') {
+        ctx.lineWidth = 4 * ts;
+        ctx.beginPath(); ctx.moveTo(z.x1, z.y1); ctx.lineTo(z.x2, z.y2); ctx.stroke();
+        ctx.lineWidth = 3 * ts;
+      }
+    }
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
 // A downed co-op body: a faded ghost + "DOWN" marker until the next wave revives it.
 function drawDownedBody(p) {
   ctx.save();
@@ -2966,6 +3027,28 @@ function render() {
       ctx.setLineDash([]); ctx.restore();
     }
   }
+  // meteor telegraphs (friendly: solid cyan ring — safe for you to stand in)
+  for (const m of game.meteors) {
+    const prog = m.t / m.delay;
+    ctx.strokeStyle = `rgba(123, 225, 255, ${0.28 + prog * 0.24})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = `rgba(255, 107, 74, ${0.07 + prog * 0.12})`;
+    ctx.beginPath(); ctx.arc(m.x, m.y, m.radius * prog, 0, Math.PI * 2); ctx.fill();
+    // falling fire meteor: hot rock with flame trail
+    const fy = m.y - (1 - prog) * 420;
+    const mx = m.x + (1 - prog) * 60;
+    const tail = 70 * (1 - prog);
+    const grad = ctx.createLinearGradient(mx - tail, fy - tail, mx, fy);
+    grad.addColorStop(0, 'rgba(255, 70, 24, 0)');
+    grad.addColorStop(0.55, 'rgba(255, 110, 42, 0.55)');
+    grad.addColorStop(1, 'rgba(255, 233, 107, 0.9)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.ellipse(mx - tail * 0.25, fy - tail * 0.25, 16 + tail * 0.25, 9, Math.PI / 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#3a2118'; ctx.strokeStyle = '#ff8c5a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(mx, fy, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+
 
   // enemy danger zones — hostile: pulsing DASHED ring + warning sign.
   // (friendly effects — your clouds, meteors, novas — use solid outlines.)
@@ -3074,27 +3157,6 @@ function render() {
     }
   }
 
-  // meteor telegraphs (friendly: solid cyan ring — safe for you to stand in)
-  for (const m of game.meteors) {
-    const prog = m.t / m.delay;
-    ctx.strokeStyle = `rgba(123, 225, 255, ${0.28 + prog * 0.24})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = `rgba(255, 107, 74, ${0.07 + prog * 0.12})`;
-    ctx.beginPath(); ctx.arc(m.x, m.y, m.radius * prog, 0, Math.PI * 2); ctx.fill();
-    // falling fire meteor: hot rock with flame trail
-    const fy = m.y - (1 - prog) * 420;
-    const mx = m.x + (1 - prog) * 60;
-    const tail = 70 * (1 - prog);
-    const grad = ctx.createLinearGradient(mx - tail, fy - tail, mx, fy);
-    grad.addColorStop(0, 'rgba(255, 70, 24, 0)');
-    grad.addColorStop(0.55, 'rgba(255, 110, 42, 0.55)');
-    grad.addColorStop(1, 'rgba(255, 233, 107, 0.9)');
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.ellipse(mx - tail * 0.25, fy - tail * 0.25, 16 + tail * 0.25, 9, Math.PI / 4, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#3a2118'; ctx.strokeStyle = '#ff8c5a'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(mx, fy, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  }
 
   // element landmarks (drawn on the ground, under the action)
   for (const s of game.structures) drawStructure(s);
@@ -3474,6 +3536,10 @@ function render() {
     ctx.beginPath(); ctx.arc(n.x, n.y, n.radius * prog, 0, Math.PI * 2); ctx.stroke();
     ctx.globalAlpha = 1;
   }
+
+  // Hostile damage outlines are repeated last so player-damage zones stay on
+  // top of friendly/status areas such as poison, meteor, breath, and nova FX.
+  drawTopDangerOutlines();
 
   // particles
   for (const pt of game.particles) {
