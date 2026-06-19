@@ -2106,6 +2106,25 @@ function togglePause() {
   }
 }
 
+
+function quitRound() {
+  if (game.state !== 'paused') return;
+  const ok = window.confirm('Quit this round and return to the title screen? Your current run will be abandoned.');
+  if (!ok) return;
+  clearSave();
+  rebindSlot = null;
+  game.enemies = [];
+  game.projectiles = [];
+  game.enemyProjectiles = [];
+  game.enemyLasers = [];
+  game.zones = [];
+  game.worldZones = [];
+  game.spawns = [];
+  game.gems = [];
+  updateResumeButton();
+  setState('title');
+}
+
 function renderKeybinds() {
   const el = document.getElementById('keybinds');
   if (!el) return;
@@ -2673,6 +2692,7 @@ document.getElementById('btn-danger-start').onclick = () => {
 };
 document.getElementById('btn-settings').onclick = () => openSettings('title');
 document.getElementById('btn-pause-settings').onclick = () => openSettings('paused');
+document.getElementById('btn-quit-round').onclick = quitRound;
 document.getElementById('btn-settings-back').onclick = () => {
   if (settingsReturn === 'paused') { setState('paused'); renderKeybinds(); }
   else setState('title');
