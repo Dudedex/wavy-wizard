@@ -40,20 +40,31 @@
     <button id="btn-settings-back" class="big-btn">Back</button>
   </div>
 
-  <!-- Character select -->
+  <!-- Character select: avatar grid on the left, detail panel on the right -->
   <div id="charselect" class="overlay">
     <h2>CHOOSE YOUR WIZARD</h2>
-    <div id="char-avatars"></div>
-    <div id="char-detail" class="panel"></div>
-    <button id="btn-char-start" class="big-btn">Start →</button>
+    <div id="char-layout">
+      <div id="char-avatars"></div>
+      <div id="char-detail" class="panel"></div>
+    </div>
+    <button id="btn-char-start" class="big-btn">Difficulty →</button>
+  </div>
+
+  <!-- Danger select: level tiles on the left, implications panel on the right -->
+  <div id="dangerselect" class="overlay">
+    <h2>CHOOSE DANGER LEVEL</h2>
+    <p class="subtitle">Higher danger = tougher enemies, but richer rewards.</p>
+    <div id="danger-layout">
+      <div id="danger-avatars"></div>
+      <div id="danger-detail" class="panel"></div>
+    </div>
+    <button id="btn-danger-start" class="big-btn">! Start !</button>
   </div>
 
   <!-- Starter spell select -->
   <div id="spellselect" class="overlay">
     <h2>CHOOSE YOUR STARTING SPELL</h2>
     <p class="subtitle">Free, at Tier I. The rest you'll buy with blood and gold.</p>
-    <div id="danger-select"></div>
-    <div id="start-options"></div>
     <div id="spell-cards" class="card-row wide"></div>
   </div>
 
@@ -109,7 +120,8 @@
     <div id="gameover-summary" class="run-summary"></div>
     <div id="gameover-board" class="sb-wrap"></div>
     <div class="win-buttons">
-      <button id="btn-retry" class="big-btn">Try Again</button>
+      <button id="btn-retry-wave" class="big-btn resume">↻ Retry Wave</button>
+      <button id="btn-retry" class="big-btn">New Run</button>
       <button id="btn-share-death" class="small-btn">📸 Share Card</button>
     </div>
   </div>

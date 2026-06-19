@@ -177,6 +177,10 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 .card .portrait { image-rendering: auto; }
 
 /* ---------- character select (avatars + detail) ---------- */
+/* two-column layout: avatar grid on the left, shop-like detail panel on the right */
+#char-layout, #danger-layout { display: flex; gap: 20px; align-items: flex-start; justify-content: center; width: 96%; max-width: 1000px; }
+#char-layout #char-avatars { flex: 1 1 auto; max-width: 640px; }
+#char-layout #char-detail, #danger-layout #danger-detail { flex: 0 0 300px; align-self: stretch; }
 #char-avatars { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; max-width: 880px; }
 .char-avatar {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -187,9 +191,24 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 .char-avatar:hover { transform: translateY(-3px); border-color: #5fb4ff; }
 .char-avatar.sel { border-color: #ffd454; box-shadow: 0 0 14px rgba(255,212,84,0.4); }
 .char-avatar .ca-name { font-size: 12px; font-weight: 700; color: #cfe2ff; }
-#char-detail { min-width: 360px; max-width: 460px; min-height: 78px; text-align: left; }
-#char-detail .cd-name { font-size: 17px; font-weight: 700; color: #eaf2ff; margin-bottom: 5px; }
+#char-detail { min-width: 280px; min-height: 120px; text-align: left; }
+.cd-portrait { display: block; margin: 0 auto 10px; }
+#char-detail .cd-name, #danger-detail .cd-name { font-size: 17px; font-weight: 700; color: #eaf2ff; margin-bottom: 5px; }
 #char-detail .cd-title { font-size: 14px; color: #9fb0c8; font-weight: 400; }
+
+/* ---------- danger select (skull tiles + implications) ---------- */
+#danger-avatars { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; flex: 1 1 auto; max-width: 600px; }
+.danger-avatar {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  width: 64px; padding: 8px 4px 5px;
+  background: #131a2c; border: 2px solid #2a3a58; border-radius: 10px;
+  cursor: pointer; transition: transform 0.08s, border-color 0.08s;
+}
+.danger-avatar:hover { transform: translateY(-3px); border-color: #ff6b6b; }
+.danger-avatar.sel { border-color: #ffd454; box-shadow: 0 0 14px rgba(255,212,84,0.4); }
+.danger-avatar .da-skull { font-size: 26px; line-height: 1; }
+.danger-avatar .da-lvl { font-size: 12px; font-weight: 700; color: #cfe2ff; }
+#danger-detail { min-width: 280px; min-height: 120px; text-align: left; }
 .card.compact { width: 158px; padding: 10px 8px; }
 .card.compact .stat-lines { font-size: 11.5px; }
 .card-row.wide { max-width: 1180px; }

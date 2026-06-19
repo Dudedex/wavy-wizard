@@ -553,17 +553,14 @@ function nearbyEnemyCount(x, y, radius) {
   return n;
 }
 
+// Damage-reduction FRACTION (0..0.90) from a positive armor value. Callers that
+// want a percent multiply by 100 (armorReductionPct); the damage path uses it
+// directly. Fitted so: 0→0, 10→~0.50, 20→~0.82, cap ~0.90.
 function armorReduction(armor) {
   const x = armor;
-  const target = 90;
-
-  // Fitted so:
-  // x = 0  -> 0
-  // x = 10 -> 50
-  // x = 20 -> 75
+  const target = 0.90;
   const a = 0.020336;
   const b = 1.60073;
-
   return target * (1 - Math.exp(-a * Math.pow(x, b)));
 }
 
@@ -575,7 +572,14 @@ function effectiveArmorFor(p) {
   p = p || game.player;
   let armor = p.stats.armor + 2 * game.elem.earth + (p.bonusArmor || 0); // Earth meta + temp wards
   if (p.stats.duelist && nearbyEnemyCount(p.x, p.y, 300) < 5) armor += p.stats.duelist;
-  return Math.min(60, Math.max(0, armor));
+  return Math.max(-60, Math.min(60, armor)); // negative armor is allowed (amplifies damage)
+}
+
+// Incoming-damage multiplier from armor: positive armor reduces it along the
+// armorReduction curve; negative armor amplifies it by the same curve, so
+// -10 armor = +50% damage taken (mirror of +10 armor = -50%).
+function armorDamageMult(armor) {
+  return armor >= 0 ? (1 - armorReduction(armor)) : (1 + armorReduction(-armor));
 }
 
 function damagePlayer(rawDmg, src, target, opts) {
@@ -585,7 +589,7 @@ function damagePlayer(rawDmg, src, target, opts) {
   const st = p.stats;
   if (src) game.lastHurtBy = src; // remember the most recent damage source (cause of death)
   const incoming = rawDmg * (game.modDmgTaken || 1);
-  const reduced = incoming * (1 - armorReduction(effectiveArmorFor(p)));
+  const reduced = incoming * armorDamageMult(effectiveArmorFor(p));
   let dmg = Math.max(opts.minDmg || 1, Math.ceil(reduced));
   if (p.shield > 0) {
     const absorbed = Math.min(p.shield, dmg);
@@ -670,6 +674,17 @@ function damagePlayer(rawDmg, src, target, opts) {
 function reviveAll() {
   for (const b of allBodies()) { b.downed = false; b.hp = b.stats.maxHp; b.invuln = 1.2; }
   if (game.coop && game.p2) { game.player.x = W / 2 - 60; game.player.y = H / 2; game.p2.x = W / 2 + 60; game.p2.y = H / 2; }
+}
+
+// Replay the wave that was just lost, keeping the current build, gold and items.
+function retryWave() {
+  game.deaths = (game.deaths || 0) + 1;
+  for (const b of allBodies()) { b.downed = false; b.hp = b.stats.maxHp; }
+  sfx('shield');
+  startWave(game.wave);            // re-rolls enemies/realm for this wave & sets state=playing
+  game.player.hp = game.player.stats.maxHp;
+  if (game.p2) game.p2.hp = game.p2.stats.maxHp;
+  saveRun();
 }
 
 // ---------------------------------------------------------------------------
@@ -2011,7 +2026,7 @@ function showMastery() {
 // ---------------------------------------------------------------------------
 // State / overlays
 // ---------------------------------------------------------------------------
-const overlays = ['title', 'charselect', 'spellselect', 'settings', 'levelup', 'mastery', 'shop', 'pause', 'gameover', 'win'];
+const overlays = ['title', 'charselect', 'dangerselect', 'spellselect', 'settings', 'levelup', 'mastery', 'shop', 'pause', 'gameover', 'win'];
 
 // Accessibility / readability toggles, shown on the settings screen.
 const SETTINGS = [
@@ -2431,29 +2446,75 @@ let selectedChar = CHARACTERS[0];
 let dangerLevel = 0;
 try { dangerLevel = clamp(parseInt(localStorage.getItem('wavywizards-danger'), 10) || 0, 0, DANGER_LEVELS.length - 1); } catch (e) { /* defaults */ }
 
+// Implications panel for a danger level (enemy HP/damage, materials).
+function renderDangerDetail(i) {
+  const d = DANGER_LEVELS[i];
+  // mirror spawnEnemy: HP ×max(1,mod); damage rises by HALF the HP bonus; materials +50%/mod
+  const hpMult = Math.max(1, d.mod);
+  const hpPct = Math.round((hpMult - 1) * 100);
+  const dmgPct = Math.round((1 + (hpMult - 1) * 0.5 - 1) * 100);
+  const matPct = Math.round(d.mod * 50);
+  const el = document.getElementById('danger-detail');
+  if (!el) return;
+  const line = (k, v, col) => `<div class="stat-line"><span>${k}</span><span style="color:${col}">${v}</span></div>`;
+  el.innerHTML =
+    `<div class="cd-name">☠ ${d.name}</div>` +
+    `<div class="stat-lines" style="margin:8px 0">` +
+      line('Enemy health', hpPct ? `+${hpPct}%` : 'base', hpPct ? '#ff6b6b' : '#9fb0c8') +
+      line('Enemy damage', dmgPct ? `+${dmgPct}%` : 'base', dmgPct ? '#ff9a3c' : '#9fb0c8') +
+      line('Materials (gold)', matPct ? `+${matPct}%` : 'base', matPct ? '#7fe08f' : '#9fb0c8') +
+    `</div>` +
+    `<div class="sum-tip">${d.desc}</div>`;
+}
+
+// Danger-level picker: a row of escalating skull tiles + a detail panel.
 function renderDangerSelect() {
-  const el = document.getElementById('danger-select');
-  el.innerHTML = '<span class="danger-label">☠ Danger level</span>';
+  const row = document.getElementById('danger-avatars');
+  if (!row) return;
+  row.innerHTML = '';
   DANGER_LEVELS.forEach((d, i) => {
-    const btn = document.createElement('button');
-    btn.className = 'danger-btn' + (i === dangerLevel ? ' on' : '');
-    btn.textContent = String(i);
-    btn.title = `${d.name} — ${d.desc}`;
-    btn.onclick = () => {
+    const tile = document.createElement('div');
+    tile.className = 'danger-avatar' + (i === dangerLevel ? ' sel' : '');
+    // colour ramps from calm to deadly as the level climbs
+    const heat = i / (DANGER_LEVELS.length - 1);
+    const col = `hsl(${Math.round(45 - heat * 45)}, ${Math.round(55 + heat * 40)}%, ${Math.round(60 - heat * 14)}%)`;
+    tile.innerHTML = `<div class="da-skull" style="color:${col}">☠</div><div class="da-lvl">${i}</div>`;
+    tile.title = `${d.name} — ${d.desc}`;
+    const pick = () => {
       dangerLevel = i;
       try { localStorage.setItem('wavywizards-danger', String(i)); } catch (e) { /* private mode */ }
-      renderDangerSelect();
+      row.querySelectorAll('.danger-avatar').forEach(t => t.classList.remove('sel'));
+      tile.classList.add('sel');
+      renderDangerDetail(i);
     };
-    el.appendChild(btn);
+    tile.onclick = pick;
+    tile.onmouseenter = () => renderDangerDetail(i);
+    tile.onmouseleave = () => renderDangerDetail(dangerLevel);
+    row.appendChild(tile);
   });
+  renderDangerDetail(dangerLevel);
+}
+
+// The danger screen sits between character select and the spell pick.
+function showDangerSelect() {
+  setState('dangerselect');
+  renderDangerSelect();
 }
 
 function renderCharDetail(c) {
   const won = getWins().includes(c.id);
-  document.getElementById('char-detail').innerHTML =
-    `<div class="cd-name">${c.name}${won ? ' 👑' : ''} <span class="cd-title">— ${c.title}</span></div>
+  const el = document.getElementById('char-detail');
+  el.innerHTML =
+    `<canvas class="cd-portrait" width="130" height="150"></canvas>
+     <div class="cd-name">${c.name}${won ? ' 👑' : ''} <span class="cd-title">— ${c.title}</span></div>
      <div class="stat-lines">${signColor(c.perks.join('<br>'))}</div>
      ${won ? '<div class="won-badge">Archlich slain</div>' : ''}`;
+  // draw the chosen wizard large at the top of the panel
+  const cv = el.querySelector('.cd-portrait');
+  const g = cv.getContext('2d');
+  g.translate(65, 108);
+  g.scale(2.7, 2.7);
+  drawWizardSprite(g, c.look, 1, 0, false);
 }
 
 function showCharSelect() {
@@ -2489,16 +2550,8 @@ function showCharSelect() {
   renderCharDetail(selectedChar);
 }
 
-function renderStartOptions() {
-  const el = document.getElementById('start-options');
-  if (!el) return;
-  el.innerHTML = '<p class="subtitle small-hint">Hover a danger level to preview enemy health and damage scaling.</p>';
-}
-
 function showSpellSelect() {
   setState('spellselect');
-  renderDangerSelect();
-  renderStartOptions();
   const row = document.getElementById('spell-cards');
   row.innerHTML = '';
   for (const [id, def] of Object.entries(SPELLS)) {
@@ -2611,7 +2664,8 @@ document.getElementById('btn-reroll').onclick = () => {
 document.getElementById('btn-resume').onclick = resumeRun;
 let settingsReturn = 'title';
 function openSettings(from) { settingsReturn = from || 'title'; setState('settings'); renderSettings(); }
-document.getElementById('btn-char-start').onclick = () => {
+document.getElementById('btn-char-start').onclick = () => { sfx('buy'); showDangerSelect(); };
+document.getElementById('btn-danger-start').onclick = () => {
   sfx('buy');
   // Rando has no starting-spell choice — his book is rolled each wave
   if (selectedChar && selectedChar.id === 'rando') beginRun('missile');
@@ -2632,6 +2686,7 @@ document.getElementById('btn-coop').onclick = () => {
 };
 document.getElementById('btn-start').onclick = showCharSelect;
 document.getElementById('btn-retry').onclick = showCharSelect;
+document.getElementById('btn-retry-wave').onclick = retryWave;
 document.getElementById('btn-again').onclick = showCharSelect;
 document.getElementById('btn-share-win').onclick = () => downloadShareCard(true);
 document.getElementById('btn-share-death').onclick = () => downloadShareCard(false);

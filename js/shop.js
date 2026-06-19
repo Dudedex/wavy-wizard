@@ -224,8 +224,9 @@ function renderShop() {
 
   // stats panel
   const s = p.stats;
-  const armor = Math.min(60, Math.max(0, s.armor + 2 * (game.elem ? game.elem.earth : 0))); // includes Earth meta-class
-  const armorPct = armorReductionPct(armor);
+  const armor = Math.max(-60, Math.min(60, s.armor + 2 * (game.elem ? game.elem.earth : 0))); // includes Earth meta-class
+  const armorPct = armorReductionPct(Math.abs(armor));
+  const armorLabel = armor >= 0 ? `${armorPct}% reduction` : `+${armorPct}% damage taken`;
   const statsEl = document.getElementById('shop-stats');
   statsEl.innerHTML = '<h3>Your Wizard</h3>' + [
     ['Max HP', Math.round(s.maxHp)],
@@ -234,7 +235,7 @@ function renderShop() {
     ['Cooldowns', '-' + Math.round((1 - s.cdMult) * 100) + '%'],
     ['Crit', Math.round(s.crit * 100) + '%'],
     ['Speed', '+' + Math.round((s.speedMult - 1) * 100) + '%'],
-    ['Armor', `${armor} (${armorPct}% reduction)`, `Armor reduces incoming damage by a percentage instead of a flat amount. 10 armor = 40%, 30 = 75%, 40 = 85%, and the cap is 60 armor for 90% reduction. The Duelist Robe adds more while few enemies are near.`],
+    ['Armor', `${armor} (${armorLabel})`, `Armor scales incoming damage by a percentage. Positive armor reduces it (≈50% at 10 armor, capped at 90%); negative armor amplifies it by the same curve, so -10 armor = +50% damage taken. The Duelist Robe adds more while few enemies are near.`],
     ['Pickup', Math.round(s.pickup)],
     ['Materials', '+' + Math.round((s.matMult - 1) * 100) + '%'],
     ['Gold Budget', (game.budget || 0) + ' ×2', `Each point doubles the next gold coin you collect. Built from uncollected gold at wave end.`],

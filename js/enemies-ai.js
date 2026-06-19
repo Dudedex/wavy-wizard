@@ -58,7 +58,8 @@ function spawnEnemy(type, x, y, opts) {
   const def = ENEMY_TYPES[type];
   const sc = waveScale(game.wave);
   const dangerHp = Math.max(1, game.danger || 0);
-  const dangerDmg = Math.max(1, (game.danger || 0) / 2);
+  // damage rises by HALF the HP bonus: +1000% HP (×11) → +500% damage (×6)
+  const dangerDmg = 1 + (dangerHp - 1) * 0.5;
   const e = {
     type, name: def.name, r: def.r,
     x, y,
