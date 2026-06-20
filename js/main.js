@@ -46,76 +46,25 @@ function weightedPick(pairs) {
 
 
 // ---------------------------------------------------------------------------
-// Input & spell hotkeys
+// Input
 // ---------------------------------------------------------------------------
 const keys = {};
 
 // one-time cleanup of legacy "browizard-" storage (renamed to "wavywizards-")
 try { ['browizard-save', 'browizard-wins', 'browizard-keys', 'browizard-danger', 'browizard-opts'].forEach(k => localStorage.removeItem(k)); } catch (e) { /* private mode */ }
 
-const DEFAULT_SLOT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'];
-let slotKeys = [...DEFAULT_SLOT_KEYS];
-try {
-  const saved = JSON.parse(localStorage.getItem('wavywizards-keys'));
-  if (Array.isArray(saved) && saved.length === MAX_SPELL_SLOTS) slotKeys = saved;
-} catch (e) { /* corrupted save, keep defaults */ }
-
-let rebindSlot = null; // slot index currently waiting for a key press
-const RESERVED_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyP', 'KeyM', 'Escape', 'Tab'];
-
-function keyLabel(code) {
-  if (code.startsWith('Digit')) return code.slice(5);
-  if (code.startsWith('Key')) return code.slice(3);
-  if (code.startsWith('Numpad')) return 'N' + code.slice(6);
-  if (code === 'Space') return 'SPC';
-  return code.slice(0, 4).toUpperCase();
-}
-
-function manualCast(slot) {
-  const sp = game.player.spells[slot];
-  if (!sp || sp.id === 'orbs' || sp.t > 0 || sp.disabled > 0) return;
-  if (game.player.stats.concentrator && game.player.moving) return; // only casts while still
-  const def = SPELLS[sp.id];
-  if (tryCast(sp)) sp.t = def.tiers[sp.tier].cd * game.player.stats.cdMult * (game.modCdMult || 1) * masteryMod(sp.id).cdMult;
-}
-
-function toggleAuto(slot) {
-  const sp = game.player.spells[slot];
-  if (!sp || sp.id === 'orbs') return;
-  sp.auto = sp.auto === false;
-  addText(game.player.x, game.player.y - 44, `${SPELLS[sp.id].name}: ${sp.auto ? 'AUTO' : 'MANUAL'}`, '#9fb0c8', 14);
-}
-
 window.addEventListener('keydown', e => {
-  if (rebindSlot !== null) {
-    e.preventDefault();
-    const taken = slotKeys.includes(e.code) && slotKeys[rebindSlot] !== e.code;
-    if (!RESERVED_KEYS.includes(e.code) && !taken) {
-      slotKeys[rebindSlot] = e.code;
-      try { localStorage.setItem('wavywizards-keys', JSON.stringify(slotKeys)); } catch (err) { /* private mode */ }
-    }
-    rebindSlot = null;
-    renderKeybinds();
-    return;
-  }
   keys[e.code] = true;
   if (e.code === 'KeyM') { muted = !muted; game.opt.muted = muted; saveOpts(); addText(game.player.x, game.player.y - 40, muted ? 'MUTED' : 'SOUND ON', '#9fb0c8', 14); }
   if (e.code === 'Tab') { game.showMeter = !game.showMeter; e.preventDefault(); }
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
-  if (game.state === 'playing') {
-    const slot = slotKeys.indexOf(e.code);
-    if (slot !== -1) {
-      if (e.shiftKey) toggleAuto(slot);
-      else manualCast(slot);
-    }
-  }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 // ---------------------------------------------------------------------------
-// Controller support (Gamepad API): left stick / d-pad moves, face buttons +
-// bumpers cast spell slots 1-6, Start pauses, Select toggles the damage meter.
+// Controller support (Gamepad API): left stick / d-pad moves, Start pauses,
+// Select toggles the damage meter.
 // ---------------------------------------------------------------------------
 // Up to two gamepads: index 0 drives P1 (or solo), index 1 drives P2 in co-op.
 const padStates = [{ moveX: 0, moveY: 0, last: [] }, { moveX: 0, moveY: 0, last: [] }];
@@ -139,8 +88,7 @@ function pollGamepad() {
     if (pressed(12)) ps.moveY = -1;
     if (pressed(13)) ps.moveY = 1;
     const edge = i => pressed(i) && !ps.last[i];
-    if (idx === 0) { // pad 1 also handles casting / pause / meter
-      if (game.state === 'playing') for (let i = 0; i < 6; i++) if (edge(i)) manualCast(i);
+    if (idx === 0) { // pad 1 also handles pause / meter
       if (edge(9)) togglePause();
       if (edge(8)) game.showMeter = !game.showMeter;
     }
@@ -1290,7 +1238,6 @@ function updateSpells(dt) {
     if (spell.id === 'orbs') continue; // passive, handled below
     spell.t -= dt;
     if (spell.t <= 0) {
-      if (spell.auto === false) { spell.t = 0; continue; } // manual mode: wait for hotkey
       if (p.stats.concentrator && p.moving) { spell.t = 0; continue; } // Concentratos: only casts while still
       if (firedThisFrame > 0) { spell.t = 0.05 * firedThisFrame; continue; } // sequential firing
       if (tryCast(spell)) { spell.t = t.cd * p.stats.cdMult * (game.modCdMult || 1) * masteryMod(spell.id).cdMult; firedThisFrame++; }
@@ -2439,7 +2386,6 @@ function togglePause() {
   if (game.state === 'playing') {
     setState('paused');
     document.getElementById('pause').classList.add('visible');
-    rebindSlot = null;
     renderKeybinds();
     renderWaveOverview('pause-overview', game.wave);
   } else if (game.state === 'paused') {
@@ -2453,7 +2399,6 @@ function quitRound() {
   const ok = window.confirm('Quit this round and return to the title screen? Your current run will be abandoned.');
   if (!ok) return;
   clearSave();
-  rebindSlot = null;
   game.enemies = [];
   game.projectiles = [];
   game.enemyProjectiles = [];
@@ -2519,7 +2464,7 @@ function saveRun() {
     realmSchedule: game.realmSchedule || {},
     charId: p.charId, hp: p.hp,
     stats: p.stats,
-    spells: p.spells.map(s => ({ id: s.id, tier: s.tier, auto: s.auto !== false, enchant: s.enchant || null, variant: s.variant || null, fuseBonus: s.fuseBonus || 0 })),
+    spells: p.spells.map(s => ({ id: s.id, tier: s.tier, enchant: s.enchant || null, variant: s.variant || null, fuseBonus: s.fuseBonus || 0 })),
     procItems: p.procs.map(pr => pr.itemId),
     items: p.items,
     lastResort: p.lastResort,
@@ -2549,7 +2494,7 @@ function resumeRun() {
   game.player = freshPlayer(selectedChar, d.spells[0].id);
   const p = game.player;
   Object.assign(p.stats, d.stats);
-  p.spells = d.spells.map(s => ({ id: s.id, tier: s.tier, t: 0, auto: s.auto !== false, enchant: s.enchant || undefined, variant: s.variant || undefined, fuseBonus: s.fuseBonus || 0 }));
+  p.spells = d.spells.map(s => ({ id: s.id, tier: s.tier, t: 0, auto: true, enchant: s.enchant || undefined, variant: s.variant || undefined, fuseBonus: s.fuseBonus || 0 }));
   for (const id of d.procItems || []) addProcItem(id);
   p.items = Array.isArray(d.items) ? d.items : [];
   p.lastResort = d.lastResort !== false;

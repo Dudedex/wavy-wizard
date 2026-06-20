@@ -471,7 +471,6 @@ function renderShop() {
       ? `<button class="fuse-btn" data-i="${i}" data-j="${j}" ${fc && game.gold < fc ? 'disabled' : ''} title="Fuse both copies into one Tier ${TIER_NAMES[sp.tier + 1]}${fc ? ` (+15% damage, costs ${fc}g)` : ''}">⚗ Fuse${fc ? ` ${fc}g` : ''}</button>`
       : '';
     html += `<div class="owned-spell" data-idx="${i}">
-      <span class="hotkey">[${keyLabel(slotKeys[i])}]</span>
       ${spellShopIcon(sp.id)}
       <div class="info"><div class="nm">${spellName(sp)}</div><div class="tr" style="color:${tc}">Tier ${TIER_NAMES[sp.tier]} · ${'★'.repeat(game.masteryLvl[sp.id] || 0)}${'☆'.repeat(5 - (game.masteryLvl[sp.id] || 0))}</div>${sp.tier === 3 && def.perfected ? `<div class="ench" style="color:#ffd454" title="Perfected">⭐ ${def.perfected}</div>` : ''}${sp.enchant ? `<div class="ench">⭐ ${ENCHANTS[sp.enchant].name}</div>` : ''}</div>
       ${fuseHtml}
@@ -483,7 +482,7 @@ function renderShop() {
     </div>`;
   });
   for (let i = p.spells.length; i < slotCap(); i++) {
-    html += `<div class="empty-slot">[${keyLabel(slotKeys[i])}] — empty slot —</div>`;
+    html += `<div class="empty-slot">— empty spell slot —</div>`;
   }
   // equipped legendaries shown as their own items below the spellbook
   const enchanted = p.spells.filter(s => s.enchant);
