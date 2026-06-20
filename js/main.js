@@ -191,6 +191,7 @@ function freshStats() {
     aura: 0, critHeal: 0, wildEvery: 0,
     // spell-modifying relics
     splitWand: 0, dotCrit: false, echoEvery: 0, gravity: false, brittle: false, stormBattery: false,
+    coneDeg: 0, // extra breath-cone degrees (base cone is 45°, cap +135 → 180°)
     // drawback-driven characters
     gambler: false, summoner: false, collector: false, cursedKing: false, rando: false,
   };
@@ -283,6 +284,8 @@ const game = {
   coop: false, p2: null, // couch co-op: second local player
   enemies: [], projectiles: [], enemyProjectiles: [],
   clouds: [], meteors: [], beams: [], novas: [], familiars: [],
+  decoys: [], flashbangs: [], turrets: [], totems: [], effectT: {}, // round-effect gadgets
+  blackholes: [], mirrors: [], banners: [], bubbles: [], lastCast: null,
   gems: [], particles: [], texts: [], spawns: [],
   spawnTimer: 0, eliteSpawned: false, bossSpawned: false,
   shake: 0,
@@ -538,6 +541,198 @@ function updateFamiliars(dt) {
   game.familiars = game.familiars.filter(f => f.t < f.dur);
 }
 
+// ---------------------------------------------------------------------------
+// Round-effect gadgets: items that periodically deploy something during a wave
+// (decoy clown, flashbang, turret, healing totem).
+// ---------------------------------------------------------------------------
+// A spawn point away from the player(s), biased toward the enemies.
+function gadgetSpawnPoint() {
+  const p = game.player;
+  let x, y;
+  for (let i = 0; i < 12; i++) {
+    x = rand(WALL + 50, W - WALL - 50);
+    y = rand(WALL + 50, H - WALL - 50);
+    if (dist2(x, y, p.x, p.y) > 140 * 140) break;
+  }
+  return { x, y };
+}
+
+function spawnRoundEffect(kind) {
+  const w = game.wave;
+  if (kind === 'decoy') {
+    const pt = gadgetSpawnPoint();
+    game.decoys.push({ x: pt.x, y: pt.y, hits: 0, maxHits: 10, t: 0, dur: 14, wobble: rand(0, 7) });
+    addText(pt.x, pt.y - 28, '🤡 Decoy!', '#ff7be1', 16);
+    sfx('shield');
+  } else if (kind === 'flash') {
+    // drop it on the thickest enemy cluster if there is one, else near the player
+    let best = null, bestN = -1;
+    for (const e of game.enemies) { if (e.dead) continue; const n = nearbyEnemyCount(e.x, e.y, 130); if (n > bestN) { bestN = n; best = e; } }
+    const x = best ? best.x : game.player.x + rand(-120, 120);
+    const y = best ? best.y : game.player.y + rand(-120, 120);
+    game.flashbangs.push({ x: clamp(x, WALL + 30, W - WALL - 30), y: clamp(y, WALL + 30, H - WALL - 30), t: 0, delay: 1, radius: 150, done: false });
+  } else if (kind === 'turret') {
+    const p = game.player;
+    game.turrets.push({ x: clamp(p.x + rand(-40, 40), WALL + 20, W - WALL - 20), y: clamp(p.y + rand(-40, 40), WALL + 20, H - WALL - 20),
+      t: 0, dur: 12, cd: 0.5, dmg: Math.round(8 + w * 2) });
+    sfx('shield');
+  } else if (kind === 'totem') {
+    const p = game.player;
+    game.totems.push({ x: clamp(p.x + rand(-50, 50), WALL + 20, W - WALL - 20), y: clamp(p.y + rand(-50, 50), WALL + 20, H - WALL - 20),
+      t: 0, dur: 10, tick: 0, heal: Math.round(3 + w * 0.4), radius: 90 });
+    sfx('heal');
+  } else if (kind === 'blackhole') {
+    // spawn on the thickest enemy cluster so it actually catches foes
+    let best = null, bestN = -1;
+    for (const e of game.enemies) { if (e.dead) continue; const n = nearbyEnemyCount(e.x, e.y, 180); if (n > bestN) { bestN = n; best = e; } }
+    const pt = best ? { x: best.x, y: best.y } : gadgetSpawnPoint();
+    game.blackholes.push({ x: clamp(pt.x, WALL + 40, W - WALL - 40), y: clamp(pt.y, WALL + 40, H - WALL - 40), t: 0, pull: 2.2, radius: 200, dmg: Math.round(18 + w * 4), burst: false });
+    sfx('drain');
+  } else if (kind === 'mirror') {
+    const p = game.player;
+    game.mirrors.push({ x: clamp(p.x + rand(-50, 50), WALL + 20, W - WALL - 20), y: clamp(p.y + rand(-50, 50), WALL + 20, H - WALL - 20),
+      t: 0, dur: 8, cd: 0.6, look: { ...p.look } });
+    sfx('shield');
+  } else if (kind === 'banner') {
+    const p = game.player;
+    game.banners.push({ x: clamp(p.x, WALL + 20, W - WALL - 20), y: clamp(p.y, WALL + 20, H - WALL - 20),
+      t: 0, dur: 12, radius: 150, bonus: 0.30 });
+    sfx('level');
+  } else if (kind === 'bubble') {
+    const pt = gadgetSpawnPoint();
+    game.bubbles.push({ x: pt.x, y: pt.y, t: 0, dur: 5, radius: 150, slow: 0.6 });
+    sfx('frost');
+  }
+}
+
+function updateRoundEffects(dt) {
+  for (const it of (game.player.items || [])) {
+    const def = ITEMS.find(i => i.id === it.id);
+    if (!def || !def.roundEffect) continue;
+    const re = def.roundEffect;
+    // more copies fire proportionally faster
+    const interval = re.interval / Math.max(1, it.n || 1);
+    if (game.effectT[it.id] === undefined) game.effectT[it.id] = interval * 0.5; // stagger the first deploy
+    game.effectT[it.id] -= dt;
+    if (game.effectT[it.id] <= 0) { game.effectT[it.id] = interval; spawnRoundEffect(re.kind); }
+  }
+
+  // decoys — taunt is applied in updateEnemies; here we just age them out
+  for (const d of game.decoys) { d.t += dt; d.wobble += dt * 4; }
+  game.decoys = game.decoys.filter(d => d.t < d.dur && d.hits < d.maxHits);
+
+  // flashbangs — count down, then stun every enemy in the blast
+  for (const f of game.flashbangs) {
+    f.t += dt;
+    if (!f.done && f.t >= f.delay) {
+      f.done = true;
+      game.novas.push({ x: f.x, y: f.y, t: 0, dur: 0.35, radius: f.radius, color: '#fffbe0' });
+      game.shake = Math.max(game.shake, 8);
+      sfx('boom');
+      for (const e of game.enemies) {
+        if (e.dead) continue;
+        if (dist2(f.x, f.y, e.x, e.y) <= f.radius * f.radius) {
+          e.stunT = Math.max(e.stunT || 0, 3);
+          e.windup = 0; e.charging = 0; e.spiral = null; // interrupt whatever it was doing
+        }
+      }
+    }
+  }
+  game.flashbangs = game.flashbangs.filter(f => f.t < f.delay + 0.4);
+
+  // turrets — zap the nearest enemy on a cadence
+  for (const tr of game.turrets) {
+    tr.t += dt; tr.cd -= dt;
+    if (tr.cd <= 0) {
+      const tgt = nearestEnemy(tr.x, tr.y, 320);
+      if (tgt) {
+        tr.cd = 0.5;
+        game.beams.push({ pts: [{ x: tr.x, y: tr.y }, { x: tgt.x, y: tgt.y }], t: 0, dur: 0.16, color: '#8be0ff', width: 2.5 });
+        hitEnemy(tgt, tr.dmg, { source: 'lightning' });
+      }
+    }
+  }
+  game.turrets = game.turrets.filter(tr => tr.t < tr.dur);
+
+  // healing totems — pulse-heal living bodies standing nearby
+  for (const to of game.totems) {
+    to.t += dt; to.tick -= dt;
+    if (to.tick <= 0) {
+      to.tick = 0.5;
+      for (const b of livePlayers()) {
+        if (dist2(to.x, to.y, b.x, b.y) <= to.radius * to.radius && b.hp < b.stats.maxHp) {
+          b.hp = Math.min(b.stats.maxHp, b.hp + Math.round(to.heal * HEAL_FACTOR));
+          addText(b.x, b.y - b.r - 10, '+' + Math.round(to.heal * HEAL_FACTOR), '#7fe08f', 13);
+        }
+      }
+    }
+  }
+  game.totems = game.totems.filter(to => to.t < to.dur);
+
+  // black holes — drag enemies inward, then burst for heavy AoE damage
+  for (const bh of game.blackholes) {
+    bh.t += dt;
+    if (bh.t < bh.pull) {
+      for (const e of game.enemies) {
+        if (e.dead) continue;
+        const d = Math.hypot(bh.x - e.x, bh.y - e.y);
+        if (d > 4 && d < bh.radius) {
+          const pull = Math.min(d, 240) * dt; // stronger pull the closer to the deadline
+          e.x += (bh.x - e.x) / d * pull;
+          e.y += (bh.y - e.y) / d * pull;
+        }
+      }
+    } else if (!bh.burst) {
+      bh.burst = true;
+      explodeAt(bh.x, bh.y, bh.radius * 0.8, bh.dmg, '#b07bff', 'orbs', {});
+      game.novas.push({ x: bh.x, y: bh.y, t: 0, dur: 0.4, radius: bh.radius * 0.8, color: '#c47bff' });
+      game.shake = Math.max(game.shake, 10);
+    }
+  }
+  game.blackholes = game.blackholes.filter(bh => bh.t < bh.pull + 0.35);
+
+  // mirror images — recast the player's last spell at half power from the clone
+  for (const m of game.mirrors) {
+    m.t += dt; m.cd -= dt;
+    if (m.cd <= 0 && game.lastCast && SPELLS[game.lastCast.id]) {
+      m.cd = 0.6;
+      const p = game.player, px = p.x, py = p.y;
+      p.x = m.x; p.y = m.y;                                  // cast from the clone's position
+      castSpell(game.lastCast, { dmgScale: 0.5 });
+      p.x = px; p.y = py;
+    }
+  }
+  game.mirrors = game.mirrors.filter(m => m.t < m.dur);
+
+  // banners — grant bonus damage while a living body fights within range
+  let bannerBonus = 0;
+  for (const b of game.banners) {
+    b.t += dt;
+    if (livePlayers().some(pl => dist2(b.x, b.y, pl.x, pl.y) <= b.radius * b.radius)) bannerBonus = Math.max(bannerBonus, b.bonus);
+  }
+  game.player.bannerDmg = bannerBonus;
+  if (game.p2) game.p2.bannerDmg = bannerBonus;
+  game.banners = game.banners.filter(b => b.t < b.dur);
+
+  // time bubbles — keep every enemy inside heavily slowed
+  for (const bub of game.bubbles) {
+    bub.t += dt;
+    for (const e of game.enemies) {
+      if (!e.dead && dist2(bub.x, bub.y, e.x, e.y) <= bub.radius * bub.radius) {
+        e.slowT = Math.max(e.slowT, 0.25); e.slowAmt = Math.max(e.slowAmt || 0, bub.slow);
+      }
+    }
+  }
+  game.bubbles = game.bubbles.filter(bub => bub.t < bub.dur);
+}
+
+// The nearest active decoy to a point (enemies taunt onto these), or null.
+function nearestDecoy(x, y, maxRange) {
+  let best = null, bd = (maxRange || 1e9) ** 2;
+  for (const d of game.decoys) { const dd = dist2(x, y, d.x, d.y); if (dd < bd) { bd = dd; best = d; } }
+  return best;
+}
+
 function nearbyEnemyCount(x, y, radius) {
   let n = 0;
   for (const e of game.enemies) if (!e.dead && dist2(x, y, e.x, e.y) <= radius * radius) n++;
@@ -720,6 +915,109 @@ function retryWave() {
 }
 
 // ---------------------------------------------------------------------------
+// Run simulator (analysis tool): headlessly fast-forwards the CURRENT build
+// (character + spells + items) through all 20 waves at a given danger level,
+// with no rendering and the player invulnerable, and reports the total spell
+// damage it deals. Used to predict performance across every difficulty.
+// ---------------------------------------------------------------------------
+function simSetupWave(w) {
+  game.wave = w;
+  game.waveTime = 0;
+  game.waveDur = bossCountForWave(w) ? Infinity : Math.min(60, 16 + w * 2) + 10;
+  game.spawnTimer = 0.5; game.eliteSpawned = false; game.bossSpawned = false;
+  game.enemies = []; game.projectiles = []; game.enemyProjectiles = []; game.enemyLasers = [];
+  game.clouds = []; game.meteors = []; game.beams = []; game.novas = []; game.familiars = [];
+  game.decoys = []; game.flashbangs = []; game.turrets = []; game.totems = [];
+  game.blackholes = []; game.mirrors = []; game.banners = []; game.bubbles = [];
+  game.spawns = []; game.zones = []; game.walls = []; game.cones = []; game.tornadoes = [];
+  game.structures = []; game.structIce = 0; game.worldSpawns = []; game.fountains = []; game.fountainsSpawned = 0;
+  game.gems = []; game.particles = []; game.texts = [];
+  // neutralise the environment so we measure the build's own spell output
+  game.worldEvent = null; game.worldZones = []; game.hazardT = 1e9; game.fountainAt = 1e9; game.fountainMax = 0;
+  game.modifier = null; game.modGemMult = 0; game.modXpMult = 1; game.modDmgTaken = 1; game.modCdMult = 1;
+  game.modSpawnMult = 1; game.modFountainMult = 1; game.modHazardMult = 1; game.modSwarm = false; game.comboHazard = 1;
+  game.debtHpMult = 1; game.debtSpdMult = 1;
+  game.player.x = W / 2; game.player.y = H / 2;
+  for (const s of game.player.spells) s.t = 0;
+}
+
+function simulateRun(dangerMod) {
+  const snap = { ...game };          // shallow snapshot; sim reassigns arrays/scalars
+  const src = snap.player;
+  try {
+    game.state = 'playing'; game.coop = false; game.p2 = null;
+    game.danger = dangerMod; game.mapElement = null;
+    const charDef = CHARACTERS.find(c => c.id === src.charId) || CHARACTERS[0];
+    game.player = freshPlayer(charDef);
+    game.player.stats = plainClone(src.stats);              // current built-up stats (items included)
+    game.player.items = plainClone(src.items || []);
+    game.player.spells = (src.spells || []).map(s => ({ id: s.id, tier: s.tier, t: 0, auto: true, enchant: s.enchant, variant: s.variant, fuseBonus: s.fuseBonus || 0 }));
+    game.player.procs = [];
+    for (const pr of (src.procs || [])) addProcItem(pr.itemId);
+    game.player.invuln = 1e9;
+    game.masteryLvl = plainClone(snap.masteryLvl || {});
+    game.masteryMods = plainClone(snap.masteryMods || {});
+    game.masteryAcc = {};
+    game.totalDmg = 0; game.runDmg = {}; game.kills = 0;
+    game.effectT = {}; game.castQueue = [];
+    const dt = 0.15;
+    let simTime = 0;
+    for (let w = 1; w <= 20; w++) {
+      simSetupWave(w);
+      const boss = !!bossCountForWave(w);
+      const cap = boss ? 30 : Math.min(game.waveDur, 18);
+      for (let t = 0; t < cap; t += dt) {
+        recomputeElements();
+        updateProcs(dt); updateBuffs(dt);
+        updateSpells(dt);
+        updateProjectiles(dt); updateEnemyProjectiles(dt);
+        updateClouds(dt); updateMeteors(dt); updateZones(dt); updateTornadoes(dt);
+        updateSpawning(dt); updateEnemies(dt); updateRoundEffects(dt);
+        updateFx(dt);
+        game.player.invuln = 1e9;
+        game.waveTime += dt; simTime += dt;
+        if (boss && game.bossSpawned && !game.enemies.some(e => e.boss) && game.spawns.every(s => s.type !== 'boss')) break;
+      }
+    }
+    const perSpell = { ...game.runDmg };
+    const total = Object.values(perSpell).reduce((a, b) => a + b, 0);
+    return { danger: dangerMod, total, dps: total / Math.max(1, simTime), kills: game.kills, perSpell, time: simTime };
+  } finally {
+    Object.assign(game, snap);       // restore the real run untouched
+  }
+}
+
+function predictAllDifficulties() {
+  return DANGER_LEVELS.map((d, i) => {
+    const r = simulateRun(d.mod);
+    r.level = i; r.name = d.name;
+    return r;
+  });
+}
+
+let simReturn = 'paused';
+function showSimulate(from) {
+  simReturn = from || 'paused';
+  setState('simulate');
+  const el = document.getElementById('sim-results');
+  el.innerHTML = '<p class="subtitle">Simulating all 20 waves at every difficulty…</p>';
+  // defer so the "simulating" message paints before the (synchronous) crunch
+  setTimeout(() => {
+    let results;
+    try { results = predictAllDifficulties(); }
+    catch (e) { el.innerHTML = `<p class="subtitle red">Simulation failed: ${e}</p>`; return; }
+    const rows = results.map(r => {
+      const top = Object.entries(r.perSpell).sort((a, b) => b[1] - a[1])[0];
+      const topName = top && SPELLS[top[0]] ? `${SPELLS[top[0]].icon} ${SPELLS[top[0]].name}` : '—';
+      const heat = r.level / (DANGER_LEVELS.length - 1);
+      const col = `hsl(${Math.round(45 - heat * 45)},70%,60%)`;
+      return `<tr><td class="sb-rank" style="color:${col}">☠${r.level}</td><td class="sb-score">${formatNum(r.total)}</td><td>${formatNum(r.dps)}/s</td><td>${r.kills}</td><td class="sb-who">${topName}</td></tr>`;
+    }).join('');
+    el.innerHTML = `<table class="scoreboard"><thead><tr><th>Danger</th><th>Total spell dmg</th><th>DPS</th><th>Kills</th><th>Top spell</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }, 40);
+}
+
+// ---------------------------------------------------------------------------
 // Spell casting
 // ---------------------------------------------------------------------------
 function liveEnemies() { return game.enemies.filter(e => !e.dead); }
@@ -751,7 +1049,8 @@ function tryCast(spell) {
   const charged = st.stormBattery && p.stormCharge > 0;
   const ok = castSpell(spell, charged ? { stormBoost: true } : undefined);
   if (!ok) return false;
-  if (charged) { p.stormCharge--; addText(p.x, p.y - 30, '⚡ CHARGED', '#ffe96b', 16); }
+  game.lastCast = { id: spell.id, tier: spell.tier, enchant: spell.enchant, variant: spell.variant }; // for Mirror Image
+  if (charged) p.stormCharge--;
   if (st.doubleCast) game.castQueue.push({ spell, t: 0.05 });
   if (st.wildEvery) {
     game.castCount++;
@@ -760,7 +1059,7 @@ function tryCast(spell) {
   // Echo Lens relic: every 7th successful cast repeats for free.
   if (st.echoEvery) {
     p.echoCount = (p.echoCount || 0) + 1;
-    if (p.echoCount % st.echoEvery === 0) { game.castQueue.push({ spell, t: 0.08 }); addText(p.x, p.y - 30, '🔭 ECHO', '#aef0ff', 16); }
+    if (p.echoCount % st.echoEvery === 0) game.castQueue.push({ spell, t: 0.08 });
   }
   // Echo enchant: 40% chance to cast again for 60% damage (its own crit roll).
   if (spell.enchant === 'echo' && Math.random() < 0.40) game.castQueue.push({ spell, t: 0.1, dmgScale: 0.6 });
@@ -782,7 +1081,8 @@ function castSpell(spell, opts) {
   // Concentratos casts only while still and hits 50% harder for it
   const stillBonus = (st.concentrator && !p.moving) ? 1.5 : 1;
   const dscale = (opts.dmgScale || 1) * masteryMod(spell.id).dmgMult * stillBonus
-    * (opts.stormBoost ? 1.6 : 1) * (1 + (spell.fuseBonus || 0)); // Collector: fused spells hit harder
+    * (opts.stormBoost ? 1.6 : 1) * (1 + (spell.fuseBonus || 0)) // Collector: fused spells hit harder
+    * (1 + (p.bannerDmg || 0)); // Banner of Fury: bonus damage while near a planted banner
   const areaF = st.areaMult || 1; // -25% area on the Concentratos, etc.
   const variant = spell.variant ? VARIANTS[spell.variant] : null;
   const fireF = 1 + 0.12 * game.elem.fire; // Fire meta-class: bigger AoE
@@ -805,7 +1105,9 @@ function castSpell(spell, opts) {
     const target = nearestEnemy(p.x, p.y, t.range);
     if (!target) return false;
     const angle = Math.atan2(target.y - p.y, target.x - p.x);
-    const half = Math.PI / 4; // ±45° = 90° cone
+    // breaths start at a tight 45° cone; the Wide Lens item widens it +15° (cap 180°)
+    const totalDeg = Math.min(180, 45 + (st.coneDeg || 0));
+    const half = (totalDeg / 2) * Math.PI / 180;
     const opts = { source: spell.id, ...enchHitOpts(ench) };
     if (def.breath === 'earth') opts.knock = perfected ? 560 : 360; // T4: huge shove
     const hits = coneHit(p.x, p.y, angle, t.range, half, t.dmg, opts, ench === 'splash');
@@ -1134,7 +1436,6 @@ function spawnMissileShards(pr, killed) {
 function grantArmorBuff(amount, dur) {
   const p = game.player;
   p.buffs.push({ name: 'WARDED', dmg: 0, spd: 0, armor: amount, t: dur });
-  addText(p.x, p.y - 46, '🛡 WARDED', '#8fa8ff', 16);
 }
 
 function updateTornadoes(dt) {
@@ -1247,6 +1548,12 @@ function updateEnemyProjectiles(dt) {
     pr.x += pr.vx * dt;
     pr.y += pr.vy * dt;
     if (pr.life <= 0 || pr.x < WALL || pr.x > W - WALL || pr.y < WALL || pr.y > H - WALL) { pr.dead = true; continue; }
+    // a decoy clown soaks incoming shots before they reach a player
+    let absorbed = false;
+    for (const d of game.decoys) {
+      if (dist2(pr.x, pr.y, d.x, d.y) <= (pr.r + 18) ** 2) { d.hits++; pr.dead = true; absorbed = true; burst(d.x, d.y, '#ff7be1', 5, 90, 0.3); break; }
+    }
+    if (absorbed) continue;
     for (const b of livePlayers()) {
       if (dist2(pr.x, pr.y, b.x, b.y) <= (pr.r + b.r) ** 2) {
         damagePlayer(pr.dmg, 'enemy spellfire', b, { minDmg: pr.boss ? 5 : 3, spellHit: true });
@@ -1316,7 +1623,6 @@ function updateProcs(dt) {
         pr.t = def.interval;
         const mode = pick(def.modes);
         pr.active = { mode, t: def.dur };
-        addText(p.x, p.y - 46, mode.name, mode.color || '#fff', 18);
         burst(p.x, p.y, mode.color || '#fff', 14, 150, 0.5);
         sfx('level');
         dmg += mode.dmg || 0; spd += mode.spd || 0;
@@ -1704,7 +2010,7 @@ function updateZones(dt) {
     z.t += dt;
     if (z.t >= z.delay && !z.done) {
       z.done = true;
-      for (const b of livePlayers()) if (dist2(z.x, z.y, b.x, b.y) <= z.radius * z.radius) damagePlayer(z.dmg, 'a telegraphed blast', b);
+      for (const b of livePlayers()) if (dist2(z.x, z.y, b.x, b.y) <= z.radius * z.radius) damagePlayer(z.dmg, 'a telegraphed blast', b, { spellHit: true });
       game.novas.push({ x: z.x, y: z.y, t: 0, dur: 0.3, radius: z.radius, color: z.color });
       burst(z.x, z.y, z.color, 20, 240, 0.45);
       game.shake = Math.max(game.shake, 6);
@@ -1825,6 +2131,8 @@ function startWave(n) {
   game.beams = [];
   game.novas = [];
   game.familiars = [];
+  game.decoys = []; game.flashbangs = []; game.turrets = []; game.totems = []; game.effectT = {};
+  game.blackholes = []; game.mirrors = []; game.banners = []; game.bubbles = [];
   game.spawns = [];
   game.zones = [];
   game.walls = [];
@@ -2059,7 +2367,7 @@ function showMastery() {
 // ---------------------------------------------------------------------------
 // State / overlays
 // ---------------------------------------------------------------------------
-const overlays = ['title', 'charselect', 'dangerselect', 'spellselect', 'settings', 'levelup', 'mastery', 'shop', 'pause', 'gameover', 'win'];
+const overlays = ['title', 'charselect', 'dangerselect', 'spellselect', 'settings', 'levelup', 'mastery', 'shop', 'pause', 'simulate', 'gameover', 'win'];
 
 // Accessibility / readability toggles, shown on the settings screen.
 const SETTINGS = [
@@ -2758,6 +3066,12 @@ document.getElementById('btn-danger-start').onclick = () => {
 };
 document.getElementById('btn-settings').onclick = () => openSettings('title');
 document.getElementById('btn-pause-settings').onclick = () => openSettings('paused');
+document.getElementById('btn-simulate').onclick = () => showSimulate('paused');
+document.getElementById('btn-shop-sim').onclick = () => showSimulate('shop');
+document.getElementById('btn-sim-back').onclick = () => {
+  if (simReturn === 'shop') { setState('shop'); renderShop(); }
+  else { setState('paused'); renderKeybinds(); renderWaveOverview('pause-overview', game.wave); }
+};
 document.getElementById('btn-quit-round').onclick = quitRound;
 document.getElementById('btn-settings-back').onclick = () => {
   if (settingsReturn === 'paused') { setState('paused'); renderKeybinds(); }
@@ -2892,6 +3206,7 @@ function frame(now) {
     updateSpawning(dt);
     updateEnemies(dt);
     updateFamiliars(dt);
+    updateRoundEffects(dt);
     updateGems(dt);
     updateFx(dt);
 
@@ -3136,6 +3451,86 @@ function drawSpellProjectileAsset(g, pr, time) {
     g.beginPath(); g.arc(-pr.r * 0.2, -pr.r * 0.25, pr.r * 0.28, 0, Math.PI * 2); g.fill();
   }
   g.restore();
+}
+
+// Draws round-effect gadgets (decoy, flashbang, turret, totem) + stun markers.
+function drawGadgets() {
+  const now = performance.now();
+  ctx.textAlign = 'center';
+  // healing totems (aura on the ground)
+  for (const to of game.totems) {
+    const pulse = 0.5 + Math.sin(now / 300) * 0.5;
+    ctx.globalAlpha = 0.12 + pulse * 0.12; ctx.fillStyle = '#7fe08f';
+    ctx.beginPath(); ctx.arc(to.x, to.y, to.radius, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1; ctx.font = '22px sans-serif';
+    ctx.fillText('🪅', to.x, to.y + 8);
+  }
+  // arcane turrets
+  for (const tr of game.turrets) {
+    ctx.globalAlpha = 0.9; ctx.font = '24px sans-serif';
+    ctx.fillText('🗼', tr.x, tr.y + 9);
+    ctx.globalAlpha = 1;
+  }
+  // decoy clowns + a soak gauge
+  for (const d of game.decoys) {
+    const bob = Math.sin(d.wobble) * 2;
+    ctx.font = '28px sans-serif';
+    ctx.fillText('🤡', d.x, d.y + 10 + bob);
+    const left = (d.maxHits - d.hits) / d.maxHits, bw = 32;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(d.x - bw / 2, d.y - 24, bw, 4);
+    ctx.fillStyle = '#ff7be1'; ctx.fillRect(d.x - bw / 2, d.y - 24, bw * left, 4);
+  }
+  // flashbangs blinking before they pop
+  for (const f of game.flashbangs) {
+    if (f.done) continue;
+    const blink = Math.sin(now / 55) > 0;
+    ctx.globalAlpha = 0.45 + 0.4 * (f.t / f.delay);
+    ctx.strokeStyle = blink ? '#ffffff' : '#ffd454'; ctx.lineWidth = 2; ctx.setLineDash([6, 5]);
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.globalAlpha = 1; ctx.font = '18px sans-serif';
+    ctx.fillText('🧨', f.x, f.y + 6);
+  }
+  // banners of fury — flag + range ring (green while you stand in it)
+  for (const b of game.banners) {
+    const active = livePlayers().some(pl => dist2(b.x, b.y, pl.x, pl.y) <= b.radius * b.radius);
+    ctx.globalAlpha = active ? 0.16 : 0.07; ctx.fillStyle = '#ffd454';
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = active ? 0.9 : 0.5; ctx.strokeStyle = '#ffd454'; ctx.lineWidth = active ? 2 : 1;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.font = '24px sans-serif'; ctx.fillText('🚩', b.x, b.y + 8);
+  }
+  // time bubbles — translucent blue dome
+  for (const bub of game.bubbles) {
+    const fade = bub.t > bub.dur - 0.6 ? Math.max(0.2, bub.dur - bub.t) : 1;
+    ctx.globalAlpha = 0.14 * fade; ctx.fillStyle = '#7be1ff';
+    ctx.beginPath(); ctx.arc(bub.x, bub.y, bub.radius, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.6 * fade; ctx.strokeStyle = '#aef0ff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(bub.x, bub.y, bub.radius, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.font = '20px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('⏳', bub.x, bub.y + 7);
+  }
+  // black holes — swirling singularity with an inward pull ring
+  for (const bh of game.blackholes) {
+    if (bh.burst) continue;
+    const prog = bh.t / bh.pull;
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = '#0a0414'; ctx.shadowColor = '#b07bff'; ctx.shadowBlur = 22;
+    ctx.beginPath(); ctx.arc(bh.x, bh.y, 14 + Math.sin(now / 80) * 2, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    // collapsing pull ring (shrinks toward the centre as it nears the burst)
+    ctx.globalAlpha = 0.5; ctx.strokeStyle = '#c47bff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(bh.x, bh.y, bh.radius * (1 - prog * 0.7), 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  // mirror images — translucent wizard clones
+  for (const m of game.mirrors) {
+    const fade = m.t > m.dur - 1 ? Math.max(0.25, m.dur - m.t) : 0.6;
+    ctx.save(); ctx.globalAlpha = fade; ctx.translate(m.x, m.y);
+    drawWizardSprite(ctx, m.look, 1, now / 1000, false);
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
+  // stun markers over stunned enemies
+  ctx.textAlign = 'center'; ctx.font = '14px sans-serif';
+  for (const e of game.enemies) if (!e.dead && e.stunT > 0) ctx.fillText('💫', e.x, e.y - e.r - 6);
 }
 
 function render() {
@@ -3552,6 +3947,9 @@ function render() {
     ctx.beginPath(); ctx.arc(f.x - 2, f.y - 2, 2.5, 0, Math.PI * 2); ctx.fill();
     ctx.shadowBlur = 0; ctx.globalAlpha = 1;
   }
+
+  // round-effect gadgets
+  drawGadgets();
 
   // player spell projectiles — animated spell assets with tails, cores, and tier halos
   const spellNow = performance.now() / 1000;

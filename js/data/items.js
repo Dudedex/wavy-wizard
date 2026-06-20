@@ -59,6 +59,18 @@ const ITEMS = [
   { id: 'gravity',   name: 'Gravity Stone', icon: '🌑', desc: 'AoE blasts pull enemies inward before detonating', price: 32, apply: s => s.gravity = true },
   { id: 'brittle',   name: 'Brittle Ice',   icon: '🧊', desc: 'Slowed/frozen enemies take +35% crit chance', price: 30, apply: s => s.brittle = true },
   { id: 'stormbat',  name: 'Storm Battery', icon: '🔋', desc: 'Chain Lightning kills charge your next cast (+60% dmg)', price: 32, apply: s => s.stormBattery = true },
+  // Round-effect gadgets: passively deploy something on a timer during the wave.
+  // (`roundEffect.interval` is in seconds; more copies fire proportionally faster.)
+  { id: 'decoy',   name: 'Decoy Clown',   icon: '🤡', desc: 'Every 20s a clown decoy appears that taunts enemies and soaks 10 hits', price: 30, roundEffect: { interval: 20, kind: 'decoy' } },
+  { id: 'flash',   name: 'Flashbang',     icon: '🧨', desc: 'Every 10s a flashbang drops, detonating after 1s to stun enemies for 3s', price: 28, roundEffect: { interval: 10, kind: 'flash' } },
+  { id: 'turret',  name: 'Arcane Turret', icon: '🗼', desc: 'Every 16s deploys a turret that zaps nearby enemies for 12s', price: 34, roundEffect: { interval: 16, kind: 'turret' } },
+  { id: 'totem',   name: 'Healing Totem', icon: '🪅', desc: 'Every 22s drops a totem that heals you while you stand near it', price: 30, roundEffect: { interval: 22, kind: 'totem' } },
+  { id: 'blackhole', name: 'Black Hole Orb', icon: '🕳️', desc: 'Every 25s a singularity pulls enemies in, then bursts', price: 36, roundEffect: { interval: 25, kind: 'blackhole' } },
+  { id: 'mirror',  name: 'Mirror Image',  icon: '👥', desc: 'Every 18s a clone appears that recasts your last spell at half power', price: 34, roundEffect: { interval: 18, kind: 'mirror' } },
+  { id: 'banner',  name: 'Banner of Fury', icon: '🚩', desc: 'Every 20s plant a banner that grants +30% damage while you fight near it', price: 32, roundEffect: { interval: 20, kind: 'banner' } },
+  { id: 'bubble',  name: 'Time Bubble',   icon: '⏳', desc: 'Every 16s a bubble briefly slows every enemy caught inside it', price: 30, roundEffect: { interval: 16, kind: 'bubble' } },
+  // Breath-cone widener: +15° per copy, up to a 180° cone (then it stops appearing)
+  { id: 'widecone', name: 'Wide Lens',    icon: '📐', desc: '+15° breath-cone angle (up to 180°)', price: 26, apply: s => s.coneDeg = Math.min(135, (s.coneDeg || 0) + 15) },
 ];
 
 // Level-up choices (pick 1 of 3 per level). Deliberately modest — spells carry the run.

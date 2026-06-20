@@ -485,8 +485,16 @@ function updateEnemies(dt) {
       if (e.fleeT <= 0) { e.dead = true; burst(e.x, e.y, e.color, 10, 160, 0.4); addText(e.x, e.y - e.r - 10, 'escaped!', '#ffd454', 14); continue; }
     }
 
+    // Flashbang stun: frozen and unable to act for a few seconds
+    e.stunT = Math.max(0, (e.stunT || 0) - dt);
+    if (e.stunT > 0) continue;
+
+    // Decoy clown taunts normal enemies (not bosses/elites) onto itself
+    const decoy = (e.boss || e.elite) ? null : nearestDecoy(e.x, e.y, 460);
+    const aim = decoy || p;
+    const aimR = decoy ? 18 : p.r;
     const slowFactor = 1 - (e.slowAmt || 0);
-    const d = Math.max(1, Math.hypot(p.x - e.x, p.y - e.y));
+    const d = Math.max(1, Math.hypot(aim.x - e.x, aim.y - e.y));
 
     // Bomber: once you get within range it plants and lights a fuse, then the
     // telegraphed blast zone detonates. It roots while fusing (windup).
@@ -561,7 +569,7 @@ function updateEnemies(dt) {
       if (e.spiral.left <= 0) e.spiral = null;
     }
 
-    let mx = (p.x - e.x) / d, my = (p.y - e.y) / d;
+    let mx = (aim.x - e.x) / d, my = (aim.y - e.y) / d;
     let spd = e.spd;
     let packCount = 0;
     for (const ally of game.enemies) if (!ally.dead && dist2(e.x, e.y, ally.x, ally.y) <= 115 * 115) packCount++;
@@ -656,7 +664,7 @@ function updateEnemies(dt) {
           }
           sfx('zap');
         } else {
-          const a = Math.atan2(p.y - e.y, p.x - e.x);
+          const a = Math.atan2(aim.y - e.y, aim.x - e.x); // fire at the decoy if taunted
           // veteran spitters fire a three-shot spread
           const spread = game.wave >= 8 ? [-0.34, 0, 0.34] : [-0.18, 0, 0.18];
           for (const off of spread) {
@@ -670,9 +678,14 @@ function updateEnemies(dt) {
     }
 
     // contact damage (goblins deal none — they only flee)
-    if (e.dmg > 0 && e.attackCd <= 0 && d < e.r + p.r + 2) {
-      // Leech feeds on your shield first, punishing shield-stacking
-      if (e.drainShield && p.shield > 0) {
+    if (e.dmg > 0 && e.attackCd <= 0 && d < e.r + aimR + 2) {
+      if (decoy) {
+        // the decoy clown soaks the blow instead of the player
+        decoy.hits++;
+        burst(decoy.x, decoy.y, '#ff7be1', 6, 100, 0.3);
+        sfx('hit');
+      } else if (e.drainShield && p.shield > 0) {
+        // Leech feeds on your shield first, punishing shield-stacking
         const steal = Math.min(p.shield, 10 + game.wave);
         p.shield -= steal;
         e.hp = Math.min(e.maxHp, e.hp + steal);
@@ -683,8 +696,8 @@ function updateEnemies(dt) {
       }
       e.attackCd = 0.9;
       const kd = Math.max(1, d);
-      e.kx -= (p.x - e.x) / kd * 120;
-      e.ky -= (p.y - e.y) / kd * 120;
+      e.kx -= (aim.x - e.x) / kd * 120;
+      e.ky -= (aim.y - e.y) / kd * 120;
     }
   }
   game.enemies = game.enemies.filter(e => !e.dead);

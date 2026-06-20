@@ -39,8 +39,14 @@ function rollOffer() {
     }
     return offer;
   }
-  // Gold Reclaimer caps at 3 copies — drop it from the pool once maxed
-  const pool = (game.player.stats.reclaim || 0) >= 3 ? ITEMS.filter(it => it.id !== 'reclaimer') : ITEMS;
+  // Some items drop out of the pool once maxed: Gold Reclaimer at 3 copies,
+  // Wide Lens once the breath cone reaches 180° (coneDeg 135).
+  const st = game.player.stats;
+  const pool = ITEMS.filter(it => {
+    if (it.id === 'reclaimer' && (st.reclaim || 0) >= 3) return false;
+    if (it.id === 'widecone' && (st.coneDeg || 0) >= 135) return false;
+    return true;
+  });
   return { kind: 'item', item: pick(pool) };
 }
 

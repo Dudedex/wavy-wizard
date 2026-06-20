@@ -93,6 +93,7 @@
         <div id="shop-offers" class="card-row"></div>
         <div class="shop-buttons">
           <button id="btn-reroll" class="small-btn"></button>
+          <button id="btn-shop-sim" class="small-btn">🔬 Simulate</button>
           <button id="btn-next-wave" class="big-btn">Start Next Wave</button>
         </div>
       </div>
@@ -109,8 +110,17 @@
     <div id="pause-overview" class="wave-overview"></div>
     <div id="keybinds" class="panel"></div>
     <p class="subtitle small-hint">In game: hotkeys cast spells, <b>Shift+hotkey</b> toggles auto-cast, <b>Tab</b> toggles the damage meter.</p>
+    <button id="btn-simulate" class="small-btn">🔬 Simulate run</button>
     <button id="btn-pause-settings" class="small-btn">⚙ Settings</button>
     <button id="btn-quit-round" class="small-btn danger-btn">Quit Round</button>
+  </div>
+
+  <!-- Run simulation (analysis tool) -->
+  <div id="simulate" class="overlay">
+    <h2>🔬 RUN SIMULATION</h2>
+    <p class="subtitle">Predicted total spell damage for your current build across every danger level.</p>
+    <div id="sim-results" class="sb-wrap"></div>
+    <button id="btn-sim-back" class="big-btn">Back</button>
   </div>
 
   <!-- Game over -->
