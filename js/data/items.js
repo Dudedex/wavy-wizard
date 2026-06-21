@@ -55,7 +55,6 @@ const ITEMS = [
   // Spell-modifying relics: mutate HOW your spells behave, not just the numbers.
   { id: 'splitwand', name: 'Split Wand',    icon: '🪄', desc: 'Single-target bolts split into 2 shards at 50% damage on hit', price: 34, apply: s => s.splitWand = (s.splitWand || 0) + 1 },
   { id: 'burnink',   name: 'Burning Ink',   icon: '🖋️', desc: 'Damage-over-time effects can crit', price: 30, apply: s => s.dotCrit = true },
-  { id: 'echolens',  name: 'Echo Lens',     icon: '🔭', desc: 'Every 7th cast repeats for free', price: 32, apply: s => s.echoEvery = 7 },
   { id: 'gravity',   name: 'Gravity Stone', icon: '🌑', desc: 'AoE blasts pull enemies inward before detonating', price: 32, apply: s => s.gravity = true },
   { id: 'brittle',   name: 'Brittle Ice',   icon: '🧊', desc: 'Slowed/frozen enemies take +35% crit chance', price: 30, apply: s => s.brittle = true },
   { id: 'stormbat',  name: 'Storm Battery', icon: '🔋', desc: 'Chain Lightning kills charge your next cast (+60% dmg)', price: 32, apply: s => s.stormBattery = true },

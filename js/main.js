@@ -395,7 +395,7 @@ function recomputeElements() {
 const MASTERY_THRESHOLDS = [18, 45, 83, 132, 195]; // +50% kills to level a spell's mastery
 const MASTERY_OPTIONS = [
   { name: 'Empower',  icon: '💪', desc: '+18% damage with this spell', apply: m => m.dmgMult *= 1.18 },
-  { name: 'Hasten',   icon: '⏩', desc: '-12% cooldown / +12% rate',   apply: m => { m.cdMult *= 0.88; m.dmgMult *= 1.04; } },
+  { name: 'Hasten',   icon: '⏩', desc: '-12% cooldown',   apply: m => { m.cdMult *= 0.88; m.dmgMult *= 1.04; } },
   { name: 'Overload', icon: '⚡', desc: '+30% damage, +10% cooldown',  apply: m => { m.dmgMult *= 1.30; m.cdMult *= 1.10; } },
 ];
 function masteryMod(id) {
@@ -972,6 +972,8 @@ function restoreRoundSnapshot(s) {
   game.dmgMeter = {}; game.castQueue = []; game.fountains = []; game.fountainsSpawned = 0;
   game.hazardT = 5; game.antiCampT = 3; game.dangerEliteDone = false; game.castCount = 0;
   game.worldZones = []; game.worldTickT = 0; game.worldSpawnT = 0;
+  // reset wave-progress spawn flags so a retried boss/elite wave spawns them again
+  game.bossSpawned = false; game.eliteSpawned = false; game.spawnTimer = 0.5; game.waveTime = 0;
   // Infinity doesn't survive JSON cloning (becomes null) — restore the sentinels
   if (!Number.isFinite(game.worldEventAt)) game.worldEventAt = Infinity;
   if (game.waveDur == null) game.waveDur = bossCountForWave(game.wave) ? Infinity : Math.min(60, 16 + game.wave * 2) + 10;
@@ -1737,6 +1739,7 @@ function grantTempBuff(name, dmg, spd, dur, color) {
 function consumeFountain(f) {
   const p = game.player;
   f.used = true;
+  if (lastSecondsOfWave()) unlockAch('thirsty'); // "Always Thirsty"
   burst(f.x, f.y, f.ft.color, 26, 220, 0.6);
   switch (f.ft.id) {
     case 'heal':
@@ -1837,6 +1840,7 @@ function grantMineItem(ws) {
   addText(ws.x, ws.y - 30, `Mined: ${it.icon} ${it.name}!`, '#ffd454', 17);
   burst(ws.x, ws.y, '#ffd454', 26, 220, 0.6);
   sfx('level');
+  if (lastSecondsOfWave()) unlockAch('sleight'); // "Sleight of Hands"
 }
 
 function updateWorldSpawns(dt) {
@@ -1860,7 +1864,7 @@ function updateWorldSpawns(dt) {
         ws.prog += dt;
         if (ws.prog >= 3.35) { grantMineItem(ws); ws.used = true; }
       } else {
-        ws.prog = Math.max(0, ws.prog - dt * 0.333); // slowly lose progress if you step off
+        ws.prog = Math.max(0, ws.prog - dt * 0.1); // slowly lose progress if you step off
       }
     }
   }
@@ -2259,7 +2263,7 @@ function startWave(n) {
       x = rand(WALL + 90, W - WALL - 90); y = rand(WALL + 90, H - WALL - 90);
       if (dist2(x, y, W / 2, H / 2) > 200 * 200 && game.worldSpawns.every(o => dist2(x, y, o.x, o.y) > 200 * 200)) break;
     }
-    game.worldSpawns.push({ kind, x, y, r: kind === 'magnet' ? 24 : 28, prog: 0, t: 0 });
+    game.worldSpawns.push({ kind, x, y, r: kind === 'magnet' ? 24 : 46, prog: 0, t: 0 });
   }
 
   // schedule a possible world event mid-round (wave 5+, 33% chance)
@@ -2733,6 +2737,7 @@ const ACHIEVEMENTS = (() => {
     { id: 'endless', icon: '♾️', name: 'Beyond the Veil', desc: 'Press on into Endless mode (past wave 20).', check: c => c.endless || c.wave > 20 },
     { id: 'slayer', icon: '💀', name: 'Exterminator', desc: 'Slay 500 enemies in one run.', check: c => c.kills >= 500 },
     { id: 'tycoon', icon: '💰', name: 'Tycoon', desc: 'Earn 1000 gold in one run.', check: c => c.gold >= 1000 },
+    { id: 'over9000', icon: '💥', name: "It's Over 9000!", desc: 'Reach over 9000 overall DPS in a run.', check: c => c.runTime >= 10 && c.dps > 9000 },
     // --- custom-only achievements (the ONLY ones earnable in a Custom round) ---
     { id: 'custom_win', icon: '⚙️', name: "Can't Be Satisfied", desc: 'Win the game (clear wave 20) with custom affixes.', customOnly: true, check: c => c.won && c.custom },
     { id: 'elephant', icon: '🐘', name: 'Elephant in the Glass Room', desc: 'Win a Custom game with enemy health −99% and damage +5000%, leaving the materials affix untouched (0%).', customOnly: true, check: c => c.won && c.custom && c.customAffix && c.customAffix.hp === -99 && c.customAffix.dmg === 5000 && c.customAffix.mat === 0 },
@@ -2764,6 +2769,8 @@ const ACHIEVEMENTS = (() => {
     { id: 'packrat', icon: '🎒', name: 'Pack Rat', desc: 'Own 15 items at the same time.', inline: true },
     { id: 'untouchable', icon: '🧼', name: 'Untouchable', desc: 'Clear 10 waves (lifetime) without taking a single hit.', inline: true },
     { id: 'statue', icon: '🗿', name: 'Rooted to the Spot', desc: 'Clear a wave without moving an inch.', inline: true },
+    { id: 'sleight', icon: '🤹', name: 'Sleight of Hands', desc: 'Grab an item from a chest with under 2 seconds left in a wave.', inline: true },
+    { id: 'thirsty', icon: '🥤', name: 'Always Thirsty', desc: 'Drain a fountain with under 2 seconds left in a wave.', inline: true },
     { id: 'tenderized', icon: '🥩', name: 'Tenderized', desc: 'Stack the spell-vulnerability debuff to the max of 20.', inline: true },
   ];
   // Win on each preset danger level (winning higher also unlocks the ones below).
@@ -2810,6 +2817,8 @@ function achievementContext(won) {
     usedLastResort: !!game.usedLastResort,
     runFlawless: !!game.runFlawless,
     customAffix: game.customDanger || null,
+    runTime: game.runTime || 0,
+    dps: game.runTime > 0 ? (game.totalDmg || 0) / game.runTime : 0,
   };
 }
 
@@ -2827,6 +2836,12 @@ function unlockAch(id) {
   if (p && typeof addText === 'function') addText(p.x, p.y - 72, `🏅 ${a.name}`, '#ffd454', 18);
   try { sfx('buy'); } catch (e) { /* audio not ready */ }
   return true;
+}
+
+// True when fewer than 2 seconds remain in the current (finite) wave.
+function lastSecondsOfWave() {
+  const remaining = (game.waveDur || 0) - (game.waveTime || 0);
+  return isFinite(remaining) && remaining >= 0 && remaining < 2;
 }
 
 // "Untouchable": lifetime tally of flawless wave clears; unlock at 10.
@@ -2850,6 +2865,7 @@ function checkLiveAchievements() {
   if (!earned.painlover && effectiveArmorFor(p) <= -40) unlockAch('painlover');
   if (!earned.hoarder && (game.gold || 0) >= 50000) unlockAch('hoarder');
   if (!earned.packrat && (p.items ? p.items.length : 0) >= 15) unlockAch('packrat');
+  if (!earned.over9000 && game.runTime > 10 && (game.totalDmg || 0) / game.runTime > 9000) unlockAch('over9000');
 }
 
 // Evaluates every achievement against the finished run, persists any newly
@@ -3892,6 +3908,18 @@ function drawSpellProjectileAsset(g, pr, time) {
   g.restore();
 }
 
+// Shared look for friendly/positive effect zones: light-purple fill + thick
+// blue dotted border (distinct from hostile red-dashed danger zones).
+function drawFriendlyZone(x, y, r, fillA, strokeA) {
+  ctx.save();
+  ctx.globalAlpha = fillA; ctx.fillStyle = '#b08cff';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = strokeA; ctx.strokeStyle = '#5fbaff';
+  ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.setLineDash([3, 9]);
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
 // Draws round-effect gadgets (decoy, flashbang, turret, totem) + stun markers.
 function drawGadgets() {
   const now = performance.now();
@@ -3899,8 +3927,7 @@ function drawGadgets() {
   // healing totems (aura on the ground)
   for (const to of game.totems) {
     const pulse = 0.5 + Math.sin(now / 300) * 0.5;
-    ctx.globalAlpha = 0.12 + pulse * 0.12; ctx.fillStyle = '#7fe08f';
-    ctx.beginPath(); ctx.arc(to.x, to.y, to.radius, 0, Math.PI * 2); ctx.fill();
+    drawFriendlyZone(to.x, to.y, to.radius, 0.10 + pulse * 0.10, 0.7);
     ctx.globalAlpha = 1; ctx.font = '22px sans-serif';
     ctx.fillText('🪅', to.x, to.y + 8);
   }
@@ -3929,22 +3956,16 @@ function drawGadgets() {
     ctx.globalAlpha = 1; ctx.font = '18px sans-serif';
     ctx.fillText('🧨', f.x, f.y + 6);
   }
-  // banners of fury — flag + range ring (green while you stand in it)
+  // banners of fury — flag + friendly zone ring (brighter while you stand in it)
   for (const b of game.banners) {
     const active = livePlayers().some(pl => dist2(b.x, b.y, pl.x, pl.y) <= b.radius * b.radius);
-    ctx.globalAlpha = active ? 0.16 : 0.07; ctx.fillStyle = '#ffd454';
-    ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = active ? 0.9 : 0.5; ctx.strokeStyle = '#ffd454'; ctx.lineWidth = active ? 2 : 1;
-    ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.stroke();
+    drawFriendlyZone(b.x, b.y, b.radius, active ? 0.16 : 0.07, active ? 0.9 : 0.5);
     ctx.globalAlpha = 1; ctx.font = '24px sans-serif'; ctx.fillText('🚩', b.x, b.y + 8);
   }
-  // time bubbles — translucent blue dome
+  // time bubbles — friendly slow-zone dome
   for (const bub of game.bubbles) {
     const fade = bub.t > bub.dur - 0.6 ? Math.max(0.2, bub.dur - bub.t) : 1;
-    ctx.globalAlpha = 0.14 * fade; ctx.fillStyle = '#7be1ff';
-    ctx.beginPath(); ctx.arc(bub.x, bub.y, bub.radius, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 0.6 * fade; ctx.strokeStyle = '#aef0ff'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(bub.x, bub.y, bub.radius, 0, Math.PI * 2); ctx.stroke();
+    drawFriendlyZone(bub.x, bub.y, bub.radius, 0.14 * fade, 0.7 * fade);
     ctx.globalAlpha = 1; ctx.font = '20px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('⏳', bub.x, bub.y + 7);
   }
   // black holes — swirling singularity with an inward pull ring
@@ -3983,16 +4004,13 @@ function render() {
   // themed atmospheric background (gradient, dust, runes, grid, walls)
   drawBackground();
 
-  // ground clouds — poison renders as clustered toxic puffs; fire as burning ground
+  // ground clouds — poison renders as clustered toxic puffs. Fire "burning ground"
+  // is a damage aftermath only; it is intentionally not drawn (kept invisible).
   for (const c of game.clouds) {
+    if (c.fire) continue; // damage zone after fire breath / Ember Crown: no visual
     const fade = c.t < 0.3 ? c.t / 0.3 : c.t > c.dur - 0.5 ? (c.dur - c.t) / 0.5 : 1;
     const now = performance.now() / 1000;
-    if (c.fire) {
-      ctx.fillStyle = `rgba(255, 140, 60, ${0.10 * fade})`;
-      ctx.beginPath(); ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = `rgba(255, 170, 70, ${0.32 * fade})`;
-      ctx.lineWidth = 2; ctx.stroke();
-    } else {
+    {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = `rgba(120, 210, 75, ${0.07 * fade})`;
@@ -4011,27 +4029,8 @@ function render() {
       ctx.setLineDash([]); ctx.restore();
     }
   }
-  // meteor telegraphs (friendly: solid cyan ring — safe for you to stand in)
-  for (const m of game.meteors) {
-    const prog = m.t / m.delay;
-    ctx.strokeStyle = `rgba(123, 225, 255, ${0.28 + prog * 0.24})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = `rgba(255, 107, 74, ${0.07 + prog * 0.12})`;
-    ctx.beginPath(); ctx.arc(m.x, m.y, m.radius * prog, 0, Math.PI * 2); ctx.fill();
-    // falling fire meteor: hot rock with flame trail
-    const fy = m.y - (1 - prog) * 420;
-    const mx = m.x + (1 - prog) * 60;
-    const tail = 70 * (1 - prog);
-    const grad = ctx.createLinearGradient(mx - tail, fy - tail, mx, fy);
-    grad.addColorStop(0, 'rgba(255, 70, 24, 0)');
-    grad.addColorStop(0.55, 'rgba(255, 110, 42, 0.55)');
-    grad.addColorStop(1, 'rgba(255, 233, 107, 0.9)');
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.ellipse(mx - tail * 0.25, fy - tail * 0.25, 16 + tail * 0.25, 9, Math.PI / 4, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#3a2118'; ctx.strokeStyle = '#ff8c5a'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(mx, fy, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  }
+  // Meteors are not telegraphed — no pre-impact area indicator or falling rock.
+  // The only feedback is the impact flash (nova + burst) raised in updateMeteors.
 
 
   // enemy danger zones — hostile: pulsing DASHED ring + warning sign.

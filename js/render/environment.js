@@ -440,7 +440,8 @@ function drawWorldSpawn(ws) {
       for (let k = 1; k <= 3; k++) { g.beginPath(); g.arc(0, 0, ws.r + k * 12, -0.6, 0.6); g.stroke(); }
     }
   } else {
-    // treasure chest item event
+    // treasure chest item event (scaled up to match the bigger pickup radius)
+    g.scale(1.7, 1.7);
     g.shadowColor = '#ffd454'; g.shadowBlur = ws.active ? 14 : 8;
     g.fillStyle = '#7a431d';
     g.strokeStyle = '#ffd454';

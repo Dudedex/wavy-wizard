@@ -415,9 +415,22 @@ function startEnemyAbility(e, p, d) {
     }
     case 'warden': { // raise a temporary ward that blocks the player's path
       const a = Math.atan2(p.y - e.y, p.x - e.x);
-      game.walls.push({ x: clamp(p.x + Math.cos(a) * 60, WALL + 50, W - WALL - 50),
-        y: clamp(p.y + Math.sin(a) * 60, WALL + 50, H - WALL - 50),
-        r: 46, t: 0, dur: 4.5 });
+      const R = 46, GAP = 64; // keep the ward a slip-gap away so it can't pin the player
+      // primary spot: a barrier just past the player (away from the warden)
+      let wx = p.x + Math.cos(a) * (R + GAP);
+      let wy = p.y + Math.sin(a) * (R + GAP);
+      // if that would sandwich the player against an arena edge, drop it on the
+      // warden's side instead so there's always open space to slip around it
+      const margin = WALL + R + 30;
+      if (wx < margin || wx > W - margin || wy < margin || wy > H - margin) {
+        wx = p.x - Math.cos(a) * (R + GAP);
+        wy = p.y - Math.sin(a) * (R + GAP);
+      }
+      wx = clamp(wx, WALL + R, W - WALL - R);
+      wy = clamp(wy, WALL + R, H - WALL - R);
+      // final safety: never raise it on top of the player — try again shortly
+      if (Math.hypot(wx - p.x, wy - p.y) < R + p.r + 10) { e.abilityT = 1.5; break; }
+      game.walls.push({ x: wx, y: wy, r: R, t: 0, dur: 4.5 });
       addText(e.x, e.y - e.r - 16, 'WARD!', '#8fa8ff', 15);
       e.abilityT = rand(5, 7);
       break;
