@@ -71,21 +71,6 @@ function keyLabel(code) {
   return code.slice(0, 4).toUpperCase();
 }
 
-function manualCast(slot) {
-  const sp = game.player.spells[slot];
-  if (!sp || sp.id === 'orbs' || sp.t > 0 || sp.disabled > 0) return;
-  if (game.player.stats.concentrator && game.player.moving) return; // only casts while still
-  const def = SPELLS[sp.id];
-  if (tryCast(sp)) sp.t = def.tiers[sp.tier].cd * game.player.stats.cdMult * (game.modCdMult || 1) * masteryMod(sp.id).cdMult;
-}
-
-function toggleAuto(slot) {
-  const sp = game.player.spells[slot];
-  if (!sp || sp.id === 'orbs') return;
-  sp.auto = sp.auto === false;
-  addText(game.player.x, game.player.y - 44, `${SPELLS[sp.id].name}: ${sp.auto ? 'AUTO' : 'MANUAL'}`, '#9fb0c8', 14);
-}
-
 window.addEventListener('keydown', e => {
   if (rebindSlot !== null) {
     e.preventDefault();
@@ -102,13 +87,6 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyM') { muted = !muted; game.opt.muted = muted; saveOpts(); addText(game.player.x, game.player.y - 40, muted ? 'MUTED' : 'SOUND ON', '#9fb0c8', 14); }
   if (e.code === 'Tab') { game.showMeter = !game.showMeter; e.preventDefault(); }
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
-  if (game.state === 'playing') {
-    const slot = slotKeys.indexOf(e.code);
-    if (slot !== -1) {
-      if (e.shiftKey) toggleAuto(slot);
-      else manualCast(slot);
-    }
-  }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -139,8 +117,7 @@ function pollGamepad() {
     if (pressed(12)) ps.moveY = -1;
     if (pressed(13)) ps.moveY = 1;
     const edge = i => pressed(i) && !ps.last[i];
-    if (idx === 0) { // pad 1 also handles casting / pause / meter
-      if (game.state === 'playing') for (let i = 0; i < 6; i++) if (edge(i)) manualCast(i);
+    if (idx === 0) { // pad 1 also handles pause / meter (spells auto-cast)
       if (edge(9)) togglePause();
       if (edge(8)) game.showMeter = !game.showMeter;
     }
@@ -148,6 +125,87 @@ function pollGamepad() {
   }
 }
 window.addEventListener('blur', () => { if (game.state === 'playing') togglePause(); });
+
+// ---------------------------------------------------------------------------
+// Mobile: rotate-to-landscape prompt + transparent on-screen touch controls.
+// A virtual joystick (bottom-left) drives P1's movement via `touchMove`; spells
+// auto-cast, so the only other control needed is a pause button (top-right).
+// ---------------------------------------------------------------------------
+const touchMove = { x: 0, y: 0 };
+const IS_TOUCH = (typeof window !== 'undefined') &&
+  (('ontouchstart' in window) || (navigator.maxTouchPoints > 0) ||
+   (window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
+
+function isPortrait() {
+  return (window.innerHeight || 0) > (window.innerWidth || 0);
+}
+
+// Show the touch overlay only on touch devices, only while actually playing.
+function updateTouchControls() {
+  const tc = document.getElementById('touch-controls');
+  if (!tc) return;
+  const on = IS_TOUCH && game.state === 'playing';
+  tc.classList.toggle('show', on);
+  if (!on) { touchMove.x = 0; touchMove.y = 0; resetTouchKnob(); }
+}
+
+function updateRotatePrompt() {
+  const rp = document.getElementById('rotate-prompt');
+  if (!rp) return;
+  rp.classList.toggle('show', IS_TOUCH && isPortrait());
+}
+
+function resetTouchKnob() {
+  const knob = document.getElementById('touch-knob');
+  if (knob) knob.style.transform = 'translate(0px, 0px)';
+}
+
+function setupTouchControls() {
+  if (!IS_TOUCH) return;
+  document.body.classList.add('is-touch');
+  updateRotatePrompt();
+  window.addEventListener('resize', updateRotatePrompt);
+  window.addEventListener('orientationchange', () => setTimeout(updateRotatePrompt, 80));
+
+  const stick = document.getElementById('touch-stick');
+  const knob = document.getElementById('touch-knob');
+  if (stick && knob) {
+    let activeId = null;
+    const radius = 44; // max knob travel from centre, in px
+    const setVec = (touch) => {
+      const r = stick.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      let dx = touch.clientX - cx, dy = touch.clientY - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      const clamped = Math.min(len, radius);
+      const ux = dx / len, uy = dy / len;
+      knob.style.transform = `translate(${ux * clamped}px, ${uy * clamped}px)`;
+      // dead-zone so a resting thumb doesn't drift the wizard
+      const mag = clamped < 8 ? 0 : 1;
+      touchMove.x = ux * mag;
+      touchMove.y = uy * mag;
+    };
+    const findTouch = (e) => [...e.changedTouches].find(t => t.identifier === activeId);
+    stick.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (activeId === null) { activeId = e.changedTouches[0].identifier; setVec(e.changedTouches[0]); }
+    }, { passive: false });
+    stick.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      const t = findTouch(e); if (t) setVec(t);
+    }, { passive: false });
+    const end = (e) => {
+      if (findTouch(e)) { activeId = null; touchMove.x = 0; touchMove.y = 0; resetTouchKnob(); }
+    };
+    stick.addEventListener('touchend', end);
+    stick.addEventListener('touchcancel', end);
+  }
+
+  const pauseBtn = document.getElementById('touch-pause');
+  if (pauseBtn) {
+    pauseBtn.addEventListener('click', (e) => { e.preventDefault(); togglePause(); });
+  }
+}
 
 // Hover the in-game damage meter (canvas) to see a spell's full details.
 canvas.addEventListener('mousemove', e => {
@@ -787,6 +845,13 @@ function damagePlayer(rawDmg, src, target, opts) {
   }
   if (dmg > 0) {
     p.hp -= dmg;
+    game.tookDamageThisWave = true;
+    game.runFlawless = false; // any hit voids the flawless-run achievement
+    // "Enter the Matrix": 10 hits inside a 3-second window
+    const now = performance.now();
+    game._hitTimes = (game._hitTimes || []).filter(t => now - t < 3000);
+    game._hitTimes.push(now);
+    if (game._hitTimes.length >= 10) unlockAch('matrix');
     addText(p.x, p.y - p.r - 12, '-' + dmg, '#ff6b6b', 17);
     sfx('hurt');
     if (game.opt.shake !== false) game.shake = Math.max(game.shake, 6);
@@ -805,6 +870,7 @@ function damagePlayer(rawDmg, src, target, opts) {
   if (opts.spellHit) {
     p.spellVulnStacks = (p.spellVulnStacks || []).filter(t => t > 0).slice(-19);
     p.spellVulnStacks.push(3);
+    if (p.spellVulnStacks.length >= 20) unlockAch('tenderized');
   }
   p.invuln = 0.35;
   if (p.hp <= 0) {
@@ -812,6 +878,7 @@ function damagePlayer(rawDmg, src, target, opts) {
     // Last Resort: once per game, cheat death in a huge dramatic moment.
     if (p.lastResort) {
       p.lastResort = false;
+      game.usedLastResort = true; // "Not Today!" needs this + a win
       const type = p.lastResortType || 'basic';
       // Phoenix revives at 30% HP; the rest cling to 1 HP.
       p.hp = type === 'phoenix' ? Math.max(1, Math.round(p.stats.maxHp * 0.3)) : 1;
@@ -852,12 +919,14 @@ function damagePlayer(rawDmg, src, target, opts) {
     // everyone is down — show the death screen instead of restarting the round.
     sfx('death');
     clearSave(); // the run is over
+    const freshAch = unlockAchievements(false);
     const hlId = recordScore(false);
     const dps = game.runTime > 0 ? Math.round(game.totalDmg / game.runTime) : 0;
     setState('gameover');
     document.getElementById('gameover-stats').textContent =
       `Reached wave ${game.wave} — ${game.kills} kills — ${dps} DPS — Level ${game.level}`;
     renderRunSummary('gameover-summary', false);
+    showAchievementToast('gameover-ach', freshAch);
     document.getElementById('gameover-board').innerHTML = scoreboardHTML(hlId);
   }
 }
@@ -880,6 +949,8 @@ function roundSnapshot() {
     totalDmg: game.totalDmg, runTime: game.runTime, runDmg: game.runDmg,
     goldEarned: game.goldEarned, bestWave: game.bestWave, lastHurtBy: game.lastHurtBy,
     debtHpMult: game.debtHpMult, debtSpdMult: game.debtSpdMult, discountBuys: game.discountBuys, arcaneLoan: game.arcaneLoan,
+    danger: game.danger, dangerLevel: game.dangerLevel, dangerCustom: game.dangerCustom, customDanger: game.customDanger,
+    dangerHpMult: game.dangerHpMult, dangerDmgMult: game.dangerDmgMult, dangerMatMult: game.dangerMatMult,
     masteryAcc: game.masteryAcc, masteryLvl: game.masteryLvl, masteryMods: game.masteryMods, pendingMastery: game.pendingMastery,
     player: game.player, p2: game.p2,
     realmSchedule: game.realmSchedule, mapElement: game.mapElement,
@@ -901,6 +972,12 @@ function restoreRoundSnapshot(s) {
   game.dmgMeter = {}; game.castQueue = []; game.fountains = []; game.fountainsSpawned = 0;
   game.hazardT = 5; game.antiCampT = 3; game.dangerEliteDone = false; game.castCount = 0;
   game.worldZones = []; game.worldTickT = 0; game.worldSpawnT = 0;
+  // Infinity doesn't survive JSON cloning (becomes null) — restore the sentinels
+  if (!Number.isFinite(game.worldEventAt)) game.worldEventAt = Infinity;
+  if (game.waveDur == null) game.waveDur = bossCountForWave(game.wave) ? Infinity : Math.min(60, 16 + game.wave * 2) + 10;
+  // clear stale round-effect gadgets so they don't linger after a retry
+  game.decoys = []; game.flashbangs = []; game.turrets = []; game.totems = [];
+  game.blackholes = []; game.mirrors = []; game.banners = []; game.bubbles = []; game.effectT = {};
   for (const b of allBodies()) { b.downed = false; b.hp = b.stats.maxHp; b.invuln = 1.2; b.spellVulnStacks = []; }
   setState('playing');
 }
@@ -1290,7 +1367,6 @@ function updateSpells(dt) {
     if (spell.id === 'orbs') continue; // passive, handled below
     spell.t -= dt;
     if (spell.t <= 0) {
-      if (spell.auto === false) { spell.t = 0; continue; } // manual mode: wait for hotkey
       if (p.stats.concentrator && p.moving) { spell.t = 0; continue; } // Concentratos: only casts while still
       if (firedThisFrame > 0) { spell.t = 0.05 * firedThisFrame; continue; } // sequential firing
       if (tryCast(spell)) { spell.t = t.cd * p.stats.cdMult * (game.modCdMult || 1) * masteryMod(spell.id).cdMult; firedThisFrame++; }
@@ -1949,8 +2025,8 @@ function triggerWorldEvent() {
 
 function updateWorld(dt) {
   const p = game.player;
-  // fire the scheduled event once we reach mid-round
-  if (!game.worldEvent && game.waveTime >= game.worldEventAt) triggerWorldEvent();
+  // fire the scheduled event once we reach mid-round (only if one was actually rolled)
+  if (!game.worldEvent && game.worldEventPick && game.waveTime >= game.worldEventAt) triggerWorldEvent();
   if (!game.worldEvent) return;
   const ev = game.worldEvent, dmg = worldDmg();
 
@@ -2085,8 +2161,9 @@ function updateGems(dt) {
 
 function collectGoldGem(g, p) {
   // fractional gold accumulates so percentage bonuses always pay out;
-  // higher danger yields +50% materials per +100% enemy power
-  let v = g.val * p.stats.matMult * (1 + (game.danger || 0) * 0.5);
+  // difficulty's materials affix scales the payout (presets: +50% per +100% power)
+  const matMult = game.dangerMatMult != null ? game.dangerMatMult : (1 + (game.danger || 0) * 0.5);
+  let v = g.val * p.stats.matMult * matMult;
   // budget pool: each point doubles the next collected coin
   if (game.budget >= 1) { v *= 2; game.budget -= 1; addText(g.x, g.y - 8, '×2', '#ffd454', 12); }
   game.goldFrac = (game.goldFrac || 0) + v;
@@ -2117,6 +2194,8 @@ function startWave(n) {
     addText(p0.x, p0.y - 50, 'THE CURSE DEEPENS · −8 MAX HP', '#ff5577', 18);
   }
   game.waveTime = 0;
+  game.tookDamageThisWave = false; // for the "Untouchable" achievement
+  game.movedThisWave = false;      // for the "Rooted to the Spot" achievement
   game.waveDur = Math.min(60, 16 + n * 2) + 10;
   game.spawnTimer = 0.5;
   game.eliteSpawned = false;
@@ -2250,6 +2329,10 @@ function startWave(n) {
 
 function endWave() {
   const p = game.player;
+  // "Untouchable": tally lifetime flawless wave clears (no hit taken), unlock at 10
+  if (!game.tookDamageThisWave) bumpFlawlessWaves();
+  // "Rooted to the Spot": clear a wave without ever moving
+  if (!game.movedThisWave) unlockAch('statue');
   // next-wave debts only apply to the wave that just ran — clear them now
   game.debtHpMult = 1; game.debtSpdMult = 1;
   // record this wave's DPS for the post-run "highest DPS wave" stat
@@ -2295,6 +2378,7 @@ function afterWaveCollected() {
   if (game.wave === 20 && !game.endless) {
     sfx('win');
     recordWin(game.player.charId);
+    const freshAch = unlockAchievements(true);
     const hlId = recordScore(true);
     const dps = game.runTime > 0 ? Math.round(game.totalDmg / game.runTime) : 0;
     saveRun(); // keep the checkpoint in case they continue into endless
@@ -2302,6 +2386,7 @@ function afterWaveCollected() {
     document.getElementById('win-stats').textContent =
       `The Archlich twins are dust. ${game.kills} kills — ${dps} DPS — Level ${game.level} — ${game.gold} gold to spare`;
     renderRunSummary('win-summary', true);
+    showAchievementToast('win-ach', freshAch);
     document.getElementById('win-board').innerHTML = scoreboardHTML(hlId);
     return;
   }
@@ -2367,7 +2452,7 @@ function showMastery() {
 // ---------------------------------------------------------------------------
 // State / overlays
 // ---------------------------------------------------------------------------
-const overlays = ['title', 'charselect', 'dangerselect', 'spellselect', 'settings', 'levelup', 'mastery', 'shop', 'pause', 'simulate', 'gameover', 'win'];
+const overlays = ['title', 'charselect', 'dangerselect', 'spellselect', 'settings', 'achievements', 'levelup', 'mastery', 'shop', 'pause', 'gameover', 'win'];
 
 // Accessibility / readability toggles, shown on the settings screen.
 const SETTINGS = [
@@ -2433,6 +2518,7 @@ function setState(s) {
     document.getElementById(id).classList.toggle('visible', id === s);
   }
   if (s === 'title') renderTitleScoreboard();
+  updateTouchControls();
 }
 
 function togglePause() {
@@ -2513,6 +2599,9 @@ function saveRun() {
     wave: game.wave, gold: game.gold, xp: game.xp, level: game.level,
     pendingLevelUps: game.pendingLevelUps, kills: game.kills, endless: game.endless,
     danger: game.danger || 0, dangerLevel: game.dangerLevel || 0, budget: game.budget || 0,
+    dangerCustom: !!game.dangerCustom, customDanger: game.customDanger || null,
+    dangerHpMult: game.dangerHpMult, dangerDmgMult: game.dangerDmgMult, dangerMatMult: game.dangerMatMult,
+    startSpell: game.startSpell || null, runFlawless: !!game.runFlawless, usedLastResort: !!game.usedLastResort,
     totalDmg: game.totalDmg || 0, runTime: game.runTime || 0,
     runDmg: game.runDmg || {}, goldEarned: game.goldEarned || 0, bestWave: game.bestWave || { wave: 0, dps: 0 },
     debtHpMult: game.debtHpMult || 1, debtSpdMult: game.debtSpdMult || 1, discountBuys: game.discountBuys || 0, arcaneLoan: !!game.arcaneLoan,
@@ -2567,11 +2656,27 @@ function resumeRun() {
   game.runDmg = d.runDmg || {}; game.goldEarned = d.goldEarned || 0; game.bestWave = d.bestWave || { wave: 0, dps: 0 };
   game.debtHpMult = d.debtHpMult || 1; game.debtSpdMult = d.debtSpdMult || 1; game.discountBuys = d.discountBuys || 0; game.arcaneLoan = !!d.arcaneLoan;
   game.realmSchedule = d.realmSchedule && Object.keys(d.realmSchedule).length ? d.realmSchedule : (() => { const s = {}; for (let w = 1; w <= 20; w++) s[w] = pick(['fire', 'ice', 'earth', 'wind']); return s; })();
+  game.startSpell = d.startSpell || null;
+  game.runFlawless = !!d.runFlawless;
+  game.usedLastResort = !!d.usedLastResort;
   game.wave = d.wave;
   game.endless = !!d.endless || d.wave >= 20;
   game.danger = d.danger || 0;
-  game.dangerLevel = d.dangerLevel || DANGER_LEVELS.findIndex(x => x.mod === game.danger);
-  if (game.dangerLevel < 0) game.dangerLevel = 0;
+  game.dangerCustom = !!d.dangerCustom;
+  game.customDanger = d.customDanger || null;
+  if (d.dangerCustom) {
+    game.dangerLevel = -1;
+    game.dangerHpMult = d.dangerHpMult != null ? d.dangerHpMult : 1;
+    game.dangerDmgMult = d.dangerDmgMult != null ? d.dangerDmgMult : 1;
+    game.dangerMatMult = d.dangerMatMult != null ? d.dangerMatMult : 1;
+  } else {
+    game.dangerLevel = d.dangerLevel != null && d.dangerLevel >= 0 ? d.dangerLevel : DANGER_LEVELS.findIndex(x => x.mod === game.danger);
+    if (game.dangerLevel < 0) game.dangerLevel = 0;
+    const mod = DANGER_LEVELS[game.dangerLevel].mod;
+    game.dangerHpMult = d.dangerHpMult != null ? d.dangerHpMult : Math.max(1, mod);
+    game.dangerDmgMult = d.dangerDmgMult != null ? d.dangerDmgMult : 1 + (Math.max(1, mod) - 1) * 0.5;
+    game.dangerMatMult = d.dangerMatMult != null ? d.dangerMatMult : 1 + mod * 0.5;
+  }
   game.shopOffers = [];
   game.player.inputId = game.coop ? 'wasd' : 'both';
   game.p2 = game.coop ? makePlayer2() : null;
@@ -2602,12 +2707,169 @@ function dangerColorForLevel(level) {
 }
 
 function recordWin(charId) {
+  if (game.dangerCustom) return; // custom-difficulty wins are not ranked
   const wins = getWinRecords();
   const level = game.dangerLevel || 0;
   if (wins[charId] === undefined || level > wins[charId]) {
     wins[charId] = level;
     try { localStorage.setItem(WINS_KEY, JSON.stringify(wins)); } catch (e) { /* private mode */ }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Achievements — persistent milestones, checked at the end of every run
+// ---------------------------------------------------------------------------
+const ACH_KEY = 'wavywizards-achievements';
+
+// Each achievement: { id, icon, name, desc, check(ctx) }. ctx is the run summary
+// built in achievementContext(). Per-character and per-difficulty entries are
+// generated so they always track the current roster / danger ladder.
+const ACHIEVEMENTS = (() => {
+  // "Winning the game" everywhere means clearing wave 20.
+  const onlyElement = (c, e) => c.spellEls.length > 0 && c.spellEls.every(els => els.includes(e));
+  const list = [
+    { id: 'first_win', icon: '🎓', name: 'Graduation', desc: 'Win the game — clear wave 20 for the first time.', check: c => c.won },
+    { id: 'wave10', icon: '🛡️', name: 'Halfway There', desc: 'Reach wave 10 in a single run.', check: c => c.wave >= 10 },
+    { id: 'endless', icon: '♾️', name: 'Beyond the Veil', desc: 'Press on into Endless mode (past wave 20).', check: c => c.endless || c.wave > 20 },
+    { id: 'slayer', icon: '💀', name: 'Exterminator', desc: 'Slay 500 enemies in one run.', check: c => c.kills >= 500 },
+    { id: 'tycoon', icon: '💰', name: 'Tycoon', desc: 'Earn 1000 gold in one run.', check: c => c.gold >= 1000 },
+    // --- custom-only achievements (the ONLY ones earnable in a Custom round) ---
+    { id: 'custom_win', icon: '⚙️', name: "Can't Be Satisfied", desc: 'Win the game (clear wave 20) with custom affixes.', customOnly: true, check: c => c.won && c.custom },
+    { id: 'elephant', icon: '🐘', name: 'Elephant in the Glass Room', desc: 'Win a Custom game with enemy health −99% and damage +5000%, leaving the materials affix untouched (0%).', customOnly: true, check: c => c.won && c.custom && c.customAffix && c.customAffix.hp === -99 && c.customAffix.dmg === 5000 && c.customAffix.mat === 0 },
+    { id: 'forreal', icon: '🤨', name: 'For Real?', desc: 'Win a Custom game with affixes set to exactly the Danger Level 5 values.', customOnly: true, check: c => {
+      if (!c.won || !c.custom || !c.customAffix) return false;
+      const m = DANGER_LEVELS[5].mod;
+      return c.customAffix.hp === Math.round((Math.max(1, m) - 1) * 100)
+        && c.customAffix.dmg === Math.round((1 + (Math.max(1, m) - 1) * 0.5 - 1) * 100)
+        && c.customAffix.mat === Math.round(m * 50);
+    } },
+    // --- win-condition builds (all require clearing wave 20) ---
+    { id: 'slowwizz', icon: '🐌', name: 'Slow Ass Wizz', desc: 'Win the game (clear wave 20) with movement speed below 0%.', check: c => c.won && c.speedMult < 1 },
+    { id: 'fastwizz', icon: '⚡', name: 'Fast Ass Wizz', desc: 'Win the game (clear wave 20) with movement speed above +50%.', check: c => c.won && c.speedMult > 1.5 },
+    { id: 'picky', icon: '🎯', name: 'The Picky One', desc: 'Win the game using only your starting spell (extra copies allowed).', check: c => c.won && c.startSpell && c.spellIds.length > 0 && c.spellIds.every(id => id === c.startSpell) },
+    { id: 'hotty', icon: '🔥', name: 'The Hotty', desc: 'Win the game with only fire spells in your spellbook.', check: c => c.won && onlyElement(c, 'fire') },
+    { id: 'coolone', icon: '❄️', name: 'The Cool One', desc: 'Win the game with only ice spells in your spellbook.', check: c => c.won && onlyElement(c, 'ice') },
+    { id: 'birdy', icon: '🌀', name: 'The Birdy One', desc: 'Win the game with only wind spells in your spellbook.', check: c => c.won && onlyElement(c, 'wind') },
+    { id: 'humble', icon: '⛰️', name: 'The Humble One', desc: 'Win the game with only earth spells in your spellbook.', check: c => c.won && onlyElement(c, 'earth') },
+    // --- funny / situational ---
+    { id: 'richdead', icon: '⚰️', name: "Can't Take It With You", desc: 'Die after leaving the shop holding 3000+ unspent gold.', check: c => !c.won && c.goldNow >= 3000 },
+    { id: 'cheatdeath', icon: '🪦', name: 'Not Today!', desc: 'Cheat death with Last Resort, then go on to win the game.', check: c => c.won && c.usedLastResort },
+    { id: 'untouchable2', icon: '✨', name: 'Untouchable II', desc: 'Win the game (clear wave 20) without taking a single hit.', check: c => c.won && c.runFlawless },
+    // --- funny / event-driven (unlocked live via unlockAch, never at run-end) ---
+    { id: 'matrix', icon: '🕶️', name: 'Enter the Matrix', desc: 'Get hit by 10 attacks within 3 seconds. Dodge? Never heard of it.', inline: true },
+    { id: 'broke', icon: '🪙', name: 'Broke as Wizz', desc: "Open the shop on wave 5+ and can't afford a single thing on display.", inline: true },
+    { id: 'wiztank', icon: '🪨', name: 'Wiztank', desc: 'Reach 40 armor. You are basically a wall now.', inline: true },
+    { id: 'painlover', icon: '😈', name: 'Pain Enjoyer', desc: 'Fight with −40 armor. Maximum confidence, minimum protection.', inline: true },
+    { id: 'hoarder', icon: '🐲', name: "Dragon's Hoard", desc: 'Sit on 50,000 gold at once. Spend it, you magpie.', inline: true },
+    { id: 'packrat', icon: '🎒', name: 'Pack Rat', desc: 'Own 15 items at the same time.', inline: true },
+    { id: 'untouchable', icon: '🧼', name: 'Untouchable', desc: 'Clear 10 waves (lifetime) without taking a single hit.', inline: true },
+    { id: 'statue', icon: '🗿', name: 'Rooted to the Spot', desc: 'Clear a wave without moving an inch.', inline: true },
+    { id: 'tenderized', icon: '🥩', name: 'Tenderized', desc: 'Stack the spell-vulnerability debuff to the max of 20.', inline: true },
+  ];
+  // Win on each preset danger level (winning higher also unlocks the ones below).
+  DANGER_LEVELS.forEach((d, i) => {
+    list.push({
+      id: 'win_d' + i, icon: '☠', name: `Danger ${i} Cleared`,
+      desc: `Win the game (clear wave 20) on Danger Level ${i} or higher.`,
+      check: c => c.won && !c.custom && c.dangerLevel >= i,
+    });
+  });
+  // Win as each wizard.
+  CHARACTERS.forEach(ch => {
+    list.push({
+      id: 'win_char_' + ch.id, icon: '🧙', name: `Master: ${ch.name}`,
+      desc: `Win the game (clear wave 20) as ${ch.name}, ${ch.title}.`,
+      check: c => c.won && c.charId === ch.id,
+    });
+  });
+  return list;
+})();
+
+function getAchievements() {
+  try { const a = JSON.parse(localStorage.getItem(ACH_KEY)); return a && typeof a === 'object' ? a : {}; }
+  catch (e) { return {}; }
+}
+
+function achievementContext(won) {
+  const p = game.player || {};
+  const spells = p.spells || [];
+  return {
+    won: !!won,
+    wave: game.wave || 0,
+    kills: game.kills || 0,
+    gold: game.goldEarned || 0,
+    goldNow: game.gold || 0,
+    charId: p.charId || '',
+    dangerLevel: game.dangerLevel || 0,
+    custom: !!game.dangerCustom,
+    endless: !!game.endless,
+    speedMult: (p.stats && p.stats.speedMult) || 1,
+    startSpell: game.startSpell || null,
+    spellIds: spells.map(s => s.id),
+    spellEls: spells.map(s => (SPELLS[s.id] && SPELLS[s.id].elements) || []),
+    usedLastResort: !!game.usedLastResort,
+    runFlawless: !!game.runFlawless,
+    customAffix: game.customDanger || null,
+  };
+}
+
+// Unlock a single achievement immediately (used by live, event-driven triggers
+// during play). Shows a floating in-game toast and a one-off sound.
+function unlockAch(id) {
+  if (game.dangerCustom) return false; // custom rounds earn nothing via live triggers
+  const earned = getAchievements();
+  if (earned[id]) return false;
+  const a = ACHIEVEMENTS.find(x => x.id === id);
+  if (!a) return false;
+  earned[id] = Date.now();
+  try { localStorage.setItem(ACH_KEY, JSON.stringify(earned)); } catch (e) { /* private mode */ }
+  const p = game.player;
+  if (p && typeof addText === 'function') addText(p.x, p.y - 72, `🏅 ${a.name}`, '#ffd454', 18);
+  try { sfx('buy'); } catch (e) { /* audio not ready */ }
+  return true;
+}
+
+// "Untouchable": lifetime tally of flawless wave clears; unlock at 10.
+function bumpFlawlessWaves() {
+  if (game.dangerCustom) return; // custom rounds don't count toward achievements
+  if (getAchievements().untouchable) return;
+  let n = 0;
+  try { n = parseInt(localStorage.getItem('wavywizards-flawless') || '0', 10) || 0; } catch (e) { /* private */ }
+  n++;
+  try { localStorage.setItem('wavywizards-flawless', String(n)); } catch (e) { /* private */ }
+  if (n >= 10) unlockAch('untouchable');
+}
+
+// Live stat-based funny achievements, checked cheaply each playing frame.
+function checkLiveAchievements() {
+  if (game.dangerCustom) return; // custom rounds earn nothing via live triggers
+  const earned = getAchievements();
+  const p = game.player;
+  if (!p) return;
+  if (!earned.wiztank && effectiveArmorFor(p) >= 40) unlockAch('wiztank');
+  if (!earned.painlover && effectiveArmorFor(p) <= -40) unlockAch('painlover');
+  if (!earned.hoarder && (game.gold || 0) >= 50000) unlockAch('hoarder');
+  if (!earned.packrat && (p.items ? p.items.length : 0) >= 15) unlockAch('packrat');
+}
+
+// Evaluates every achievement against the finished run, persists any newly
+// earned ones and returns the list of those that were just unlocked.
+function unlockAchievements(won) {
+  const ctx = achievementContext(won);
+  const earned = getAchievements();
+  const fresh = [];
+  for (const a of ACHIEVEMENTS) {
+    if (earned[a.id] || !a.check) continue;
+    // Custom rounds ONLY earn custom-only achievements; everything else is locked
+    // out. Conversely, custom-only achievements need a custom round.
+    if (ctx.custom !== !!a.customOnly) continue;
+    try { if (a.check(ctx)) { earned[a.id] = Date.now(); fresh.push(a); } }
+    catch (e) { /* a faulty predicate shouldn't break run-end */ }
+  }
+  if (fresh.length) {
+    try { localStorage.setItem(ACH_KEY, JSON.stringify(earned)); } catch (e) { /* private mode */ }
+  }
+  return fresh;
 }
 
 // ---------------------------------------------------------------------------
@@ -2676,6 +2938,38 @@ function renderTitleScoreboard() {
   if (!scores.length) { el.innerHTML = ''; return; }
   el.innerHTML = `<h3>🏆 Leaderboard</h3>${scoreboardHTML()}`;
 }
+
+// Banner on the end screen listing achievements just unlocked by this run.
+function showAchievementToast(targetId, fresh) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  if (!fresh || !fresh.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = `<div class="ach-toast-head">🏅 Achievement${fresh.length > 1 ? 's' : ''} Unlocked!</div>` +
+    fresh.map(a => `<div class="ach-toast-row"><span class="ach-ico">${a.icon}</span> <b>${a.name}</b></div>`).join('');
+}
+
+// Achievements menu: a grid of every achievement, locked ones dimmed.
+function renderAchievements() {
+  const el = document.getElementById('achievements-list');
+  if (!el) return;
+  const earned = getAchievements();
+  const done = ACHIEVEMENTS.filter(a => earned[a.id]).length;
+  const total = ACHIEVEMENTS.length;
+  let html = `<div class="ach-progress">${done} / ${total} unlocked</div>` +
+    `<div class="ach-note">“Winning the game” means clearing wave 20.</div><div class="ach-grid">`;
+  for (const a of ACHIEVEMENTS) {
+    const got = !!earned[a.id];
+    html += `<div class="ach-card${got ? ' got' : ' locked'}">` +
+      `<div class="ach-card-ico">${got ? a.icon : '🔒'}</div>` +
+      `<div class="ach-card-body"><div class="ach-card-name">${a.name}</div>` +
+      `<div class="ach-card-desc">${a.desc}</div></div></div>`;
+  }
+  html += `</div>`;
+  el.innerHTML = html;
+}
+
+function showAchievements() { setState('achievements'); renderAchievements(); }
 
 // ---------------------------------------------------------------------------
 // Post-run build summary — a memorable recap shown on death / victory
@@ -2765,44 +3059,69 @@ function renderRunSummary(targetId, won) {
   return s;
 }
 
-// Draws a self-contained shareable PNG card and triggers a download.
+// Draws a shareable PNG styled like the in-game end screen (animated wizard
+// captured as a still, title, build-summary panel, hint) and downloads it.
 function downloadShareCard(won) {
   const s = computeRunSummary(won);
+  const accent = won ? '#ffd454' : '#ff6b6b';
+  const W2 = 640, H2 = 560, CX = W2 / 2;
   const cv = document.createElement('canvas');
-  cv.width = 620; cv.height = 360;
+  cv.width = W2; cv.height = H2;
   const g = cv.getContext('2d');
-  // background
-  const bg = g.createLinearGradient(0, 0, 620, 360);
-  bg.addColorStop(0, won ? '#2a2410' : '#1a1020');
-  bg.addColorStop(1, '#0b0f1c');
-  g.fillStyle = bg; g.fillRect(0, 0, 620, 360);
-  g.strokeStyle = won ? '#ffd454' : '#ff6b6b'; g.lineWidth = 3; g.strokeRect(6, 6, 608, 348);
+
+  // backdrop — matches the overlay's dark radial wash
+  const bg = g.createRadialGradient(CX, 150, 40, CX, 200, 520);
+  bg.addColorStop(0, won ? 'rgba(60,46,12,0.9)' : 'rgba(40,16,32,0.9)');
+  bg.addColorStop(1, '#070a14');
+  g.fillStyle = bg; g.fillRect(0, 0, W2, H2);
+  g.strokeStyle = accent; g.lineWidth = 3; g.strokeRect(6, 6, W2 - 12, H2 - 12);
+
+  // title
   g.textAlign = 'center';
-  g.fillStyle = won ? '#ffd454' : '#ff6b6b';
-  g.font = 'bold 30px sans-serif';
-  g.fillText(won ? '★ VICTORY ★' : 'DEFEAT', 310, 52);
+  g.fillStyle = accent; g.font = 'bold 34px sans-serif';
+  g.shadowColor = accent; g.shadowBlur = 18;
+  g.fillText(won ? '★ VICTORY ★' : 'DEFEAT', CX, 56);
+  g.shadowBlur = 0;
+
+  // animated wizard, captured as a still
+  const look = (game.player && game.player.look) || CHARACTERS[0].look;
+  g.save(); g.translate(CX, 168); g.scale(3.6, 3.6);
+  drawWizardSprite(g, look, 1, performance.now() / 1000, false);
+  g.restore();
+
+  // build title + brand
   g.fillStyle = '#eaf2ff'; g.font = 'italic bold 24px sans-serif';
-  g.fillText(`“${s.title}”`, 310, 92);
-  g.fillStyle = '#9fb0c8'; g.font = '14px sans-serif';
-  g.fillText('Wavy-Wizards', 310, 116);
-  // stat lines
-  g.textAlign = 'left'; g.font = '17px sans-serif';
-  const lines = [
-    ['Wave reached', `${s.wave}${s.won ? ' — cleared!' : ''}`],
-    ['Enemies slain', `${s.kills}`],
+  g.fillText(`“${s.title}”`, CX, 235);
+  g.fillStyle = '#9fb0c8'; g.font = '13px sans-serif';
+  g.fillText('Wavy-Wizards', CX, 258);
+
+  // summary panel — same rows as the on-screen build summary
+  const fav = s.favElement ? `${ELEMENTS[s.favElement].icon} ${ELEMENTS[s.favElement].name}` : '—';
+  const rows = [
+    ['Top spell', s.topSpell ? `${s.topSpell.icon} ${s.topSpell.name}` : '—'],
+    ['Best item', s.topItem ? `${s.topItem.icon} ${s.topItem.name}` : '—'],
+    ['Gold earned', `💰 ${s.goldEarned}`],
+    ['Favourite element', fav],
+    ['Best wave DPS', s.bestWave.dps ? `${s.bestWave.dps}/s (wave ${s.bestWave.wave})` : '—'],
     ['Overall DPS', `${s.dps}/s`],
-    ['Best wave DPS', s.bestWave.dps ? `${s.bestWave.dps}/s (W${s.bestWave.wave})` : '—'],
-    ['Top spell', s.topSpell ? s.topSpell.name : '—'],
-    ['Gold earned', `${s.goldEarned}`],
+    ['Enemies slain', `${s.kills}`],
+    ['Wave reached', `${s.wave}${s.won ? ' — cleared!' : ''}`],
   ];
-  lines.forEach((ln, i) => {
-    const y = 156 + i * 30;
-    g.fillStyle = '#9fb0c8'; g.fillText(ln[0], 40, y);
-    g.fillStyle = '#eaf2ff'; g.textAlign = 'right'; g.fillText(ln[1], 580, y); g.textAlign = 'left';
+  if (!won) rows.push(['Felled by', s.cause || 'the arena']);
+  const px = 60, pw = W2 - 120, py = 274, rh = 24, ph = rows.length * rh + 16;
+  g.fillStyle = '#11182a'; g.strokeStyle = '#2a3a58'; g.lineWidth = 1;
+  g.beginPath(); g.rect(px, py, pw, ph); g.fill(); g.stroke();
+  g.font = '15px sans-serif';
+  rows.forEach((ln, i) => {
+    const y = py + 24 + i * rh;
+    g.textAlign = 'left'; g.fillStyle = '#8be0ff'; g.fillText(ln[0], px + 14, y);
+    g.textAlign = 'right'; g.fillStyle = '#eaf2ff'; g.fillText(ln[1], px + pw - 14, y);
   });
-  g.fillStyle = won ? '#ffd454' : '#ff9aae'; g.font = '13px sans-serif'; g.textAlign = 'center';
-  g.fillText(s.hint, 310, 344);
-  // trigger download
+
+  // hint banner
+  g.textAlign = 'center'; g.fillStyle = accent; g.font = '13px sans-serif';
+  g.fillText('💡 ' + s.hint, CX, py + ph + 26);
+
   const a = document.createElement('a');
   a.download = `wavy-wizards-${won ? 'victory' : 'defeat'}-w${s.wave}.png`;
   a.href = cv.toDataURL('image/png');
@@ -2827,16 +3146,69 @@ let selectedChar = CHARACTERS[0];
 let dangerLevel = 0;
 try { dangerLevel = clamp(parseInt(localStorage.getItem('wavywizards-danger'), 10) || 0, 0, DANGER_LEVELS.length - 1); } catch (e) { /* defaults */ }
 
-// Implications panel for a danger level (enemy HP/damage, materials).
+// Custom difficulty: independent enemy-health, enemy-damage and materials affixes,
+// each a percentage from -99% (×0.01) to +5000% (×51). Stored as percentages.
+const CUSTOM_MIN = -99, CUSTOM_MAX = 5000;
+let dangerCustom = false;
+let customDanger = { hp: 0, dmg: 0, mat: 0 };
+try {
+  if (localStorage.getItem('wavywizards-danger') === 'custom') dangerCustom = true;
+  const cd = JSON.parse(localStorage.getItem('wavywizards-customdanger') || 'null');
+  if (cd) customDanger = {
+    hp: clamp(cd.hp || 0, CUSTOM_MIN, CUSTOM_MAX),
+    dmg: clamp(cd.dmg || 0, CUSTOM_MIN, CUSTOM_MAX),
+    mat: clamp(cd.mat || 0, CUSTOM_MIN, CUSTOM_MAX),
+  };
+} catch (e) { /* defaults */ }
+
+const pctToMult = pct => 1 + pct / 100;
+
+// Resolve the active difficulty (preset level or Custom) onto the game object.
+// Sets the three enemy multipliers plus game.danger, the world-intensity scalar
+// that drives hazards/fountains (for Custom it tracks the damage affix).
+function applyDangerSettings() {
+  if (dangerCustom) {
+    game.dangerCustom = true;
+    game.dangerLevel = -1;
+    game.dangerHpMult = pctToMult(customDanger.hp);
+    game.dangerDmgMult = pctToMult(customDanger.dmg);
+    game.dangerMatMult = pctToMult(customDanger.mat);
+    game.danger = Math.max(0, game.dangerDmgMult - 1);
+    game.customDanger = { ...customDanger };
+  } else {
+    const mod = DANGER_LEVELS[dangerLevel].mod;
+    game.dangerCustom = false;
+    game.dangerLevel = dangerLevel;
+    game.danger = mod;
+    game.dangerHpMult = Math.max(1, mod);
+    game.dangerDmgMult = 1 + (Math.max(1, mod) - 1) * 0.5;
+    game.dangerMatMult = 1 + mod * 0.5;
+    game.customDanger = null;
+  }
+}
+
+// format a percentage affix as "+250% (×3.50)" with a colour by sign
+function affixLabel(pct) {
+  const mult = pctToMult(pct);
+  const sign = pct > 0 ? '+' : '';
+  return `${sign}${Math.round(pct)}% (×${mult.toFixed(2)})`;
+}
+
+// The currently committed difficulty key: 'custom' or a preset index.
+function currentDangerKey() { return dangerCustom ? 'custom' : dangerLevel; }
+
+// Implications panel for a danger level (enemy HP/damage, materials), or the
+// slider panel when the Custom difficulty is shown.
 function renderDangerDetail(i) {
+  const el = document.getElementById('danger-detail');
+  if (!el) return;
+  if (i === 'custom') { renderCustomDangerDetail(el); return; }
   const d = DANGER_LEVELS[i];
   // mirror spawnEnemy: HP ×max(1,mod); damage rises by HALF the HP bonus; materials +50%/mod
   const hpMult = Math.max(1, d.mod);
   const hpPct = Math.round((hpMult - 1) * 100);
   const dmgPct = Math.round((1 + (hpMult - 1) * 0.5 - 1) * 100);
   const matPct = Math.round(d.mod * 50);
-  const el = document.getElementById('danger-detail');
-  if (!el) return;
   const line = (k, v, col) => `<div class="stat-line"><span>${k}</span><span style="color:${col}">${v}</span></div>`;
   el.innerHTML =
     `<div class="cd-name">☠ ${d.name}</div>` +
@@ -2848,32 +3220,80 @@ function renderDangerDetail(i) {
     `<div class="sum-tip">${d.desc}</div>`;
 }
 
-// Danger-level picker: a row of escalating skull tiles + a detail panel.
+// Custom difficulty: three sliders (-99%…+5000%) for HP, damage and materials.
+function renderCustomDangerDetail(el) {
+  const slider = (key, label, color) =>
+    `<div class="custom-affix">` +
+      `<div class="ca-head"><span style="color:${color}">${label}</span>` +
+      `<span class="ca-val" id="ca-${key}-val">${affixLabel(customDanger[key])}</span></div>` +
+      `<input type="range" class="ca-slider" id="ca-${key}" min="${CUSTOM_MIN}" max="${CUSTOM_MAX}" step="1" value="${customDanger[key]}">` +
+    `</div>`;
+  el.innerHTML =
+    `<div class="cd-name">⚙ Custom Difficulty</div>` +
+    `<div class="custom-affixes">` +
+      slider('hp', 'Enemy health', '#ff6b6b') +
+      slider('dmg', 'Enemy damage', '#ff9a3c') +
+      slider('mat', 'Materials (gold)', '#7fe08f') +
+    `</div>` +
+    `<button id="ca-reset" class="small-btn">↺ Reset to 0%</button>` +
+    `<div class="sum-tip">Drag each affix from −99% to +5000%. Wins on Custom are not ranked.</div>`;
+  for (const key of ['hp', 'dmg', 'mat']) {
+    const input = document.getElementById('ca-' + key);
+    const val = document.getElementById('ca-' + key + '-val');
+    input.oninput = () => {
+      customDanger[key] = clamp(parseInt(input.value, 10) || 0, CUSTOM_MIN, CUSTOM_MAX);
+      val.textContent = affixLabel(customDanger[key]);
+      try { localStorage.setItem('wavywizards-customdanger', JSON.stringify(customDanger)); } catch (e) { /* private mode */ }
+    };
+  }
+  document.getElementById('ca-reset').onclick = () => {
+    sfx('buy');
+    customDanger = { hp: 0, dmg: 0, mat: 0 };
+    try { localStorage.setItem('wavywizards-customdanger', JSON.stringify(customDanger)); } catch (e) { /* private mode */ }
+    renderCustomDangerDetail(el);
+  };
+}
+
+// Danger-level picker: a row of escalating skull tiles + a Custom tile + a detail panel.
 function renderDangerSelect() {
   const row = document.getElementById('danger-avatars');
   if (!row) return;
   row.innerHTML = '';
   DANGER_LEVELS.forEach((d, i) => {
     const tile = document.createElement('div');
-    tile.className = 'danger-avatar' + (i === dangerLevel ? ' sel' : '');
+    tile.className = 'danger-avatar' + (!dangerCustom && i === dangerLevel ? ' sel' : '');
     // colour ramps from calm to deadly as the level climbs
     const heat = i / (DANGER_LEVELS.length - 1);
     const col = `hsl(${Math.round(45 - heat * 45)}, ${Math.round(55 + heat * 40)}%, ${Math.round(60 - heat * 14)}%)`;
     tile.innerHTML = `<div class="da-skull" style="color:${col}">☠</div><div class="da-lvl">${i}</div>`;
     tile.title = `${d.name} — ${d.desc}`;
-    const pick = () => {
-      dangerLevel = i;
+    tile.onclick = () => {
+      dangerLevel = i; dangerCustom = false;
       try { localStorage.setItem('wavywizards-danger', String(i)); } catch (e) { /* private mode */ }
       row.querySelectorAll('.danger-avatar').forEach(t => t.classList.remove('sel'));
       tile.classList.add('sel');
       renderDangerDetail(i);
     };
-    tile.onclick = pick;
     tile.onmouseenter = () => renderDangerDetail(i);
-    tile.onmouseleave = () => renderDangerDetail(dangerLevel);
+    tile.onmouseleave = () => renderDangerDetail(currentDangerKey());
     row.appendChild(tile);
   });
-  renderDangerDetail(dangerLevel);
+  // Custom tile
+  const ct = document.createElement('div');
+  ct.className = 'danger-avatar custom' + (dangerCustom ? ' sel' : '');
+  ct.innerHTML = `<div class="da-skull" style="color:#8be0ff">⚙</div><div class="da-lvl">Custom</div>`;
+  ct.title = 'Custom difficulty — set health, damage & materials affixes yourself';
+  ct.onclick = () => {
+    dangerCustom = true;
+    try { localStorage.setItem('wavywizards-danger', 'custom'); } catch (e) { /* private mode */ }
+    row.querySelectorAll('.danger-avatar').forEach(t => t.classList.remove('sel'));
+    ct.classList.add('sel');
+    renderDangerDetail('custom');
+  };
+  ct.onmouseenter = () => renderDangerDetail('custom');
+  ct.onmouseleave = () => renderDangerDetail(currentDangerKey());
+  row.appendChild(ct);
+  renderDangerDetail(currentDangerKey());
 }
 
 // The danger screen sits between character select and the spell pick.
@@ -2968,8 +3388,11 @@ function beginRun(starterSpell) {
   game.gems = []; game.particles = []; game.texts = [];
   game.shopOffers = [];
   game.endless = false;
-  game.danger = DANGER_LEVELS[dangerLevel].mod;
-  game.dangerLevel = dangerLevel;
+  // achievement run-state: starting spell, flawless-run + last-resort flags
+  game.startSpell = starterSpell || null;
+  game.runFlawless = true;
+  game.usedLastResort = false;
+  applyDangerSettings();
   game.masteryAcc = {}; game.masteryLvl = {}; game.masteryMods = {}; game.pendingMastery = [];
   // decide each wave's element realm up-front so the roadmap reveals it in advance
   game.realmSchedule = {};
@@ -3065,13 +3488,9 @@ document.getElementById('btn-danger-start').onclick = () => {
   else showSpellSelect();
 };
 document.getElementById('btn-settings').onclick = () => openSettings('title');
+document.getElementById('btn-achievements').onclick = () => { sfx('buy'); showAchievements(); };
+document.getElementById('btn-ach-back').onclick = () => setState('title');
 document.getElementById('btn-pause-settings').onclick = () => openSettings('paused');
-document.getElementById('btn-simulate').onclick = () => showSimulate('paused');
-document.getElementById('btn-shop-sim').onclick = () => showSimulate('shop');
-document.getElementById('btn-sim-back').onclick = () => {
-  if (simReturn === 'shop') { setState('shop'); renderShop(); }
-  else { setState('paused'); renderKeybinds(); renderWaveOverview('pause-overview', game.wave); }
-};
 document.getElementById('btn-quit-round').onclick = quitRound;
 document.getElementById('btn-settings-back').onclick = () => {
   if (settingsReturn === 'paused') { setState('paused'); renderKeybinds(); }
@@ -3106,6 +3525,7 @@ function bodyInputVec(p) {
   const id = p.inputId;
   if (id === 'both' || id === 'wasd') {
     if (keys.KeyW) dy -= 1; if (keys.KeyS) dy += 1; if (keys.KeyA) dx -= 1; if (keys.KeyD) dx += 1;
+    if (touchMove.x || touchMove.y) { dx += touchMove.x; dy += touchMove.y; } // on-screen joystick (P1)
   }
   if (id === 'both' || id === 'arrows') {
     if (keys.ArrowUp) dy -= 1; if (keys.ArrowDown) dy += 1; if (keys.ArrowLeft) dx -= 1; if (keys.ArrowRight) dx += 1;
@@ -3125,6 +3545,7 @@ function updatePlayer(dt) {
 function updateBody(dt, p) {
   let { dx, dy } = bodyInputVec(p);
   p.moving = !!(dx || dy);
+  if (p.moving) game.movedThisWave = true; // for the "no movement" achievement
   if (dx || dy) {
     const len = Math.max(1, Math.hypot(dx, dy));
     const windMult = 1 + 0.05 * game.elem.wind; // Wind meta-class: +move speed
@@ -3183,6 +3604,8 @@ function frame(now) {
     game.runTime += dt;
     recomputeElements();
     updatePlayer(dt);
+    game.achCheckT = (game.achCheckT || 0) - dt;
+    if (game.achCheckT <= 0) { game.achCheckT = 0.5; checkLiveAchievements(); }
     updateProcs(dt);
     updateBuffs(dt);
     updateStructures(dt);
@@ -3222,7 +3645,23 @@ function frame(now) {
   }
 
   render();
+  if (game.state === 'gameover') drawEndPortrait('gameover-portrait');
+  else if (game.state === 'win') drawEndPortrait('win-portrait');
   requestAnimationFrame(frame);
+}
+
+// Draws the player's wizard, animated, onto an end-screen portrait canvas.
+function drawEndPortrait(id) {
+  const cv = document.getElementById(id);
+  if (!cv) return;
+  const g = cv.getContext('2d');
+  g.clearRect(0, 0, cv.width, cv.height);
+  const look = (game.player && game.player.look) || CHARACTERS[0].look;
+  g.save();
+  g.translate(cv.width / 2, cv.height * 0.72);
+  g.scale(3.4, 3.4);
+  drawWizardSprite(g, look, 1, performance.now() / 1000, false);
+  g.restore();
 }
 
 // ---------------------------------------------------------------------------
@@ -3619,14 +4058,14 @@ function render() {
   }
 
 
-  // charge telegraphs — red lanes show where lunging enemies will travel.
+  // charge telegraphs — dark-yellow lanes show where charging enemies will travel.
   for (const e of game.enemies) {
     if (!e.chargeTele || e.windup <= 0 || e.dead) continue;
     const pulse = 0.5 + Math.sin(performance.now() / 80) * 0.5;
     const tele = e.chargeTele;
     ctx.save();
     ctx.globalAlpha = 0.35 + pulse * 0.35;
-    ctx.strokeStyle = tele.color || '#ff3344';
+    ctx.strokeStyle = tele.color || '#d4a017';
     ctx.lineWidth = (e.boss ? 12 : 7) * (game.opt.bigTele ? 1.35 : 1);
     ctx.setLineDash([14, 9]);
     ctx.lineCap = 'round';
@@ -4431,6 +4870,7 @@ function spellDetailHtml(sp) {
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
+setupTouchControls();
 setState('title');
 updateResumeButton();
 requestAnimationFrame(frame);

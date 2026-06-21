@@ -195,6 +195,7 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 .char-avatar .ca-name { font-size: 12px; font-weight: 700; color: #cfe2ff; }
 #char-detail { min-width: 280px; min-height: 120px; text-align: left; }
 .cd-portrait { display: block; margin: 0 auto 10px; }
+.end-portrait { display: block; margin: 0 auto 4px; }
 #char-detail .cd-name, #danger-detail .cd-name { font-size: 17px; font-weight: 700; color: #eaf2ff; margin-bottom: 5px; }
 #char-detail .cd-title { font-size: 14px; color: #9fb0c8; font-weight: 400; }
 
@@ -210,7 +211,31 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 .danger-avatar.sel { border-color: #ffd454; box-shadow: 0 0 14px rgba(255,212,84,0.4); }
 .danger-avatar .da-skull { font-size: 26px; line-height: 1; }
 .danger-avatar .da-lvl { font-size: 12px; font-weight: 700; color: #cfe2ff; }
+.danger-avatar.custom { width: 80px; border-color: #355; }
+.danger-avatar.custom:hover { border-color: #8be0ff; }
+.danger-avatar.custom.sel { border-color: #8be0ff; box-shadow: 0 0 14px rgba(139,224,255,0.4); }
 #danger-detail { min-width: 280px; min-height: 120px; text-align: left; }
+
+/* custom-difficulty sliders */
+.custom-affixes { margin: 10px 0; display: flex; flex-direction: column; gap: 14px; }
+#ca-reset { margin: 2px 0 8px; }
+.custom-affix .ca-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.custom-affix .ca-val { font-size: 12px; font-weight: 700; color: #eaf2ff; font-variant-numeric: tabular-nums; }
+.ca-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 6px; border-radius: 4px;
+  background: linear-gradient(90deg, #3a4a68, #ffd454);
+  outline: none; cursor: pointer;
+}
+.ca-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #ffd454; border: 2px solid #1a2236; cursor: pointer;
+}
+.ca-slider::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #ffd454; border: 2px solid #1a2236; cursor: pointer;
+}
 .card.compact { width: 158px; padding: 10px 8px; }
 .card.compact .stat-lines { font-size: 11.5px; }
 .card-row.wide { max-width: 1180px; }
@@ -635,3 +660,113 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 
 /* ---------- mastery screen ---------- */
 #mastery .card.choice { border-color: #c9a33a; }
+
+/* ---------- achievements ---------- */
+#achievements-list { width: min(820px, calc(100vw - 32px)); min-width: 0; max-width: min(820px, calc(100vw - 32px)); max-height: 68vh; overflow-y: auto; overflow-x: hidden; text-align: left; }
+.ach-progress { font-size: 14px; font-weight: 700; color: #ffd454; margin-bottom: 4px; text-align: center; }
+.ach-note { font-size: 12px; color: #9fb0c8; margin-bottom: 10px; text-align: center; font-style: italic; }
+.ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.ach-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; border-radius: 9px;
+  background: #11182a; border: 1px solid #2a3a58;
+}
+.ach-card.got { border-color: #c9a33a; box-shadow: 0 0 10px rgba(201,163,58,0.18); }
+.ach-card.locked { opacity: 0.5; }
+.ach-card-ico { font-size: 26px; line-height: 1; flex: 0 0 auto; width: 30px; text-align: center; }
+.ach-card-name { font-size: 14px; font-weight: 700; color: #eaf2ff; }
+.ach-card.locked .ach-card-name { color: #9fb0c8; }
+.ach-card-desc { font-size: 12px; color: #9fb0c8; }
+
+/* newly-unlocked banner on the end screen */
+.ach-toast {
+  width: min(420px, calc(100vw - 40px));
+  margin: 0 auto;
+  padding: 10px 14px; border-radius: 10px;
+  background: rgba(201,163,58,0.12); border: 1px solid #c9a33a;
+  text-align: center;
+}
+.ach-toast-head { font-size: 14px; font-weight: 700; color: #ffd454; margin-bottom: 5px; }
+.ach-toast-row { font-size: 13px; color: #eaf2ff; }
+.ach-toast-row .ach-ico { font-size: 16px; }
+
+/* ---------- mobile: rotate prompt + touch controls ---------- */
+/* Both hidden by default; main.js adds .is-touch to <body> on touch devices,
+   then toggles .show on each element based on orientation + game state. */
+#rotate-prompt, #touch-controls { display: none; }
+
+#rotate-prompt {
+  position: fixed;
+  inset: 0;
+  z-index: 100; /* above every overlay */
+  background: rgba(6, 8, 16, 0.96);
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+}
+#rotate-prompt.show { display: flex; }
+.rotate-card { max-width: 420px; }
+.rotate-icon {
+  font-size: 64px;
+  display: inline-block;
+  animation: rotate-hint 1.8s ease-in-out infinite;
+}
+@keyframes rotate-hint {
+  0%, 40% { transform: rotate(0deg); }
+  70%, 100% { transform: rotate(90deg); }
+}
+.rotate-card h2 { margin: 18px 0 10px; }
+.rotate-card p { color: #aab8d0; font-size: 16px; line-height: 1.5; }
+
+#touch-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 9; /* above canvas (overlays are z-index 10 and cover it in menus) */
+  pointer-events: none; /* only the children capture touches */
+}
+#touch-controls.show { display: block; }
+
+/* Left-hand virtual joystick */
+#touch-stick {
+  position: absolute;
+  left: max(18px, env(safe-area-inset-left));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  width: 132px; height: 132px;
+  border-radius: 50%;
+  background: rgba(140, 170, 230, 0.10);
+  border: 2px solid rgba(160, 190, 255, 0.28);
+  box-shadow: inset 0 0 30px rgba(120, 160, 255, 0.10);
+  pointer-events: auto;
+  touch-action: none;
+}
+#touch-knob {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 58px; height: 58px;
+  margin: -29px 0 0 -29px;
+  border-radius: 50%;
+  background: rgba(150, 185, 255, 0.42);
+  border: 2px solid rgba(200, 220, 255, 0.6);
+  box-shadow: 0 0 18px rgba(120, 160, 255, 0.35);
+  transition: transform 0.05s linear;
+}
+
+.touch-btn {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+  width: 60px; height: 60px;
+  border-radius: 50%;
+  border: 2px solid rgba(160, 190, 255, 0.32);
+  background: rgba(20, 28, 48, 0.5);
+  color: #cfe0ff;
+  font-size: 18px;
+  letter-spacing: 1px;
+  display: flex; align-items: center; justify-content: center;
+}
+.touch-btn:active { background: rgba(40, 56, 90, 0.7); }
+#touch-pause {
+  right: max(18px, env(safe-area-inset-right));
+  top: max(18px, env(safe-area-inset-top));
+}

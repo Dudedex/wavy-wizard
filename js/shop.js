@@ -190,6 +190,11 @@ function rerollCost() {
 function openShop() {
   game.player.boughtRelic = false; // Cursed King: did we buy a relic this shop?
   generateShop();
+  // "Broke as Wizz": on wave 5+, can't afford a single buyable offer on display
+  if (game.wave >= 5 && typeof unlockAch === 'function') {
+    const buyable = (game.shopOffers || []).filter(o => ['item', 'spell', 'legendary', 'phoenix'].includes(o.kind) && !o.sold);
+    if (buyable.length && buyable.every(o => offerPrice(o) > game.gold)) unlockAch('broke');
+  }
   setState('shop');
   renderShop();
   saveRun(); // between-wave checkpoint

@@ -11,16 +11,30 @@
   <canvas id="game" width="1280" height="720"></canvas>
   <div id="tooltip"></div>
 
+  <!-- Mobile: transparent on-screen controls (only shown on touch devices while playing) -->
+  <div id="touch-controls" aria-hidden="true">
+    <div id="touch-stick">
+      <div id="touch-knob"></div>
+    </div>
+    <button id="touch-pause" class="touch-btn" aria-label="Pause">❚❚</button>
+  </div>
+
+  <!-- Mobile: rotate-to-landscape prompt (only shown on touch devices held in portrait) -->
+  <div id="rotate-prompt" aria-hidden="true">
+    <div class="rotate-card">
+      <div class="rotate-icon">📱</div>
+      <h2>Turn your phone</h2>
+      <p>Wavy-Wizards is best played in <b>landscape</b>.<br>Rotate your device sideways to begin.</p>
+    </div>
+  </div>
+
   <!-- Title screen -->
   <div id="title" class="overlay visible">
     <h1>WAVY-WIZARDS</h1>
-    <p class="subtitle">Survive 20 waves. Buy spells, not weapons.</p>
     <div class="controls-hint">
       <span><b>WASD / Arrows</b> move</span>
-      <span><b>1–6</b> cast spell</span>
-      <span><b>Shift+1–6</b> toggle auto-cast</span>
       <span><b>Tab</b> damage meter</span>
-      <span><b>P</b> pause &amp; keybinds</span>
+      <span><b>P</b> pause</span>
       <span><b>M</b> mute</span>
       <span><b>🎮</b> controller supported</span>
     </div>
@@ -29,8 +43,16 @@
     <p id="coop-hint" class="subtitle zone-hint" style="display:none">Co-op: <b>P1</b> moves with <b>WASD</b>, <b>P2</b> with <b>Arrow keys</b> (or two gamepads). Shared spellbook &amp; gold.</p>
     <button id="btn-start" class="big-btn">Start Run</button>
     <button id="btn-resume" class="big-btn resume" style="display:none"></button>
+    <button id="btn-achievements" class="small-btn">🏅 Achievements</button>
     <button id="btn-settings" class="small-btn">⚙ Settings</button>
     <div id="scoreboard" class="panel" style="display:none"></div>
+  </div>
+
+  <!-- Achievements -->
+  <div id="achievements" class="overlay">
+    <h2>🏅 ACHIEVEMENTS</h2>
+    <div id="achievements-list" class="panel"></div>
+    <button id="btn-ach-back" class="big-btn">Back</button>
   </div>
 
   <!-- Settings / accessibility -->
@@ -93,7 +115,6 @@
         <div id="shop-offers" class="card-row"></div>
         <div class="shop-buttons">
           <button id="btn-reroll" class="small-btn"></button>
-          <button id="btn-shop-sim" class="small-btn">🔬 Simulate</button>
           <button id="btn-next-wave" class="big-btn">Start Next Wave</button>
         </div>
       </div>
@@ -108,27 +129,19 @@
     <h2>PAUSED</h2>
     <p class="subtitle">Press P or Esc to resume</p>
     <div id="pause-overview" class="wave-overview"></div>
-    <div id="keybinds" class="panel"></div>
-    <p class="subtitle small-hint">In game: hotkeys cast spells, <b>Shift+hotkey</b> toggles auto-cast, <b>Tab</b> toggles the damage meter.</p>
-    <button id="btn-simulate" class="small-btn">🔬 Simulate run</button>
+    <p class="subtitle small-hint"><b>Tab</b> toggles the damage meter. Spells cast automatically.</p>
     <button id="btn-pause-settings" class="small-btn">⚙ Settings</button>
     <button id="btn-quit-round" class="small-btn danger-btn">Quit Round</button>
-  </div>
-
-  <!-- Run simulation (analysis tool) -->
-  <div id="simulate" class="overlay">
-    <h2>🔬 RUN SIMULATION</h2>
-    <p class="subtitle">Predicted total spell damage for your current build across every danger level.</p>
-    <div id="sim-results" class="sb-wrap"></div>
-    <button id="btn-sim-back" class="big-btn">Back</button>
   </div>
 
   <!-- Game over -->
   <div id="gameover" class="overlay">
     <h2 class="red">You got AbraKeDabrawed</h2>
+    <canvas id="gameover-portrait" class="end-portrait" width="170" height="190"></canvas>
     <p id="gameover-stats" class="subtitle"></p>
     <label class="subtitle small-hint">Nickname <input id="score-name" maxlength="18" placeholder="Wizard name"></label>
     <div id="gameover-summary" class="run-summary"></div>
+    <div id="gameover-ach" class="ach-toast" style="display:none"></div>
     <div id="gameover-board" class="sb-wrap"></div>
     <div class="win-buttons">
       <button id="btn-retry-wave" class="big-btn resume">↻ Retry Wave</button>
@@ -141,8 +154,10 @@
   <div id="win" class="overlay">
     <div id="win-rays"></div>
     <h2 class="gold win-title">★ VICTORY ★</h2>
+    <canvas id="win-portrait" class="end-portrait" width="170" height="190"></canvas>
     <p id="win-stats" class="subtitle"></p>
     <div id="win-summary" class="run-summary win"></div>
+    <div id="win-ach" class="ach-toast" style="display:none"></div>
     <div id="win-board" class="sb-wrap"></div>
     <div class="win-buttons">
       <button id="btn-continue" class="big-btn">Continue — Endless Mode</button>

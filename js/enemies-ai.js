@@ -9,8 +9,13 @@
 // ---------------------------------------------------------------------------
 // Milestone waves: horde waves swarm you, boss waves last the full timer.
 // Past wave 20 (endless mode) the milestones repeat on a 5-wave cycle.
+// Charging / wind-up attacks (bat lunges, brute charges, boss laser sweeps) are
+// telegraphed in dark yellow so they read as "an enemy is charging an attack",
+// distinct from the red used for environmental damage zones.
+const CHARGE_TELE_COLOR = '#d4a017';
+
 const BOSS_WAVES = { 10: 1, 15: 1, 20: 2 };
-const HORDE_WAVES = [5, 15];
+const HORDE_WAVES = [12, 15]; // first horde moved off wave 5 to ease the early jump
 const ELITE_WAVES = [8, 17];
 
 function bossCountForWave(w) {
@@ -57,9 +62,11 @@ function spawnEnemy(type, x, y, opts) {
   opts = opts || {};
   const def = ENEMY_TYPES[type];
   const sc = waveScale(game.wave);
-  const dangerHp = Math.max(1, game.danger || 0);
-  // damage rises by HALF the HP bonus: +1000% HP (×11) → +500% damage (×6)
-  const dangerDmg = 1 + (dangerHp - 1) * 0.5;
+  // Enemy HP & damage multipliers come from the chosen difficulty. Preset danger
+  // levels and the Custom difficulty both set game.dangerHpMult/dangerDmgMult; the
+  // fallback reproduces the legacy formula (HP ×max(1,mod), damage = half the HP bonus).
+  const dangerHp = game.dangerHpMult != null ? game.dangerHpMult : Math.max(1, game.danger || 0);
+  const dangerDmg = game.dangerDmgMult != null ? game.dangerDmgMult : 1 + (Math.max(1, game.danger || 0) - 1) * 0.5;
   const e = {
     type, name: def.name, r: def.r,
     x, y,
@@ -147,10 +154,10 @@ function updateSpawning(dt) {
   let maxAlive = 10 + wave * 2;
   let batch = 1 + Math.floor(wave / 6);
   if (horde) {
-    // swarm pacing: way more, way faster
-    interval *= 0.4;
-    maxAlive = Math.round(maxAlive * 2.2);
-    batch += 2;
+    // swarm pacing: more & faster, but eased so it isn't an overwhelming wall
+    interval *= 0.5;
+    maxAlive = Math.round(maxAlive * 1.8);
+    batch += 1;
   } else if (bossCount) {
     // boss-only waves: slow trickle of adds
     interval = 3.2;
@@ -194,7 +201,7 @@ function startEnemyAbility(e, p, d) {
         const x2 = clamp(e.x + e.chargeX * 560, WALL + 20, W - WALL - 20);
         const y2 = clamp(e.y + e.chargeY * 560, WALL + 20, H - WALL - 20);
         e.chargeDuration = Math.hypot(x2 - e.x, y2 - e.y) / 720;
-        e.chargeTele = { type: 'line', color: '#ff3344', x1: e.x, y1: e.y, x2, y2, t: e.windup };
+        e.chargeTele = { type: 'line', color: CHARGE_TELE_COLOR, x1: e.x, y1: e.y, x2, y2, t: e.windup };
       }
       else e.abilityT = 0.55;
       break;
@@ -206,7 +213,7 @@ function startEnemyAbility(e, p, d) {
         const pts = [];
         for (let i = 0; i <= 6; i++) {
           const along = i * 83;
-          const side = (i % 2 === 0 ? -1 : 1) * 45;
+          const side = (i % 2 === 0 ? -1 : 1) * 85; // wider zig-zag swing
           pts.push({
             x: clamp(e.x + e.chargeX * along + px * side, WALL + 20, W - WALL - 20),
             y: clamp(e.y + e.chargeY * along + py * side, WALL + 20, H - WALL - 20),
@@ -214,18 +221,29 @@ function startEnemyAbility(e, p, d) {
         }
         pts[0] = { x: e.x, y: e.y };
         e.chargeDuration = pts.slice(1).reduce((sum, pt, i) => sum + Math.hypot(pt.x - pts[i].x, pt.y - pts[i].y), 0) / 625;
-        e.chargeTele = { type: 'zigzag', color: '#ff3344', points: pts, t: e.windup };
+        e.chargeTele = { type: 'zigzag', color: CHARGE_TELE_COLOR, points: pts, t: e.windup };
       } else e.abilityT = 0.55;
       break;
     }
-    case 'redbat': { // red bat: circular charge after a 1s ring indicator
+    case 'redbat': { // red bat: smooth sine-wave charge after a 1s path indicator
       if (d > 80 && d < 610) {
-        e.windup = 1.0; e.pending = 'batCircle';
-        const a = Math.atan2(e.y - p.y, e.x - p.x);
-        e.chargeCX = p.x; e.chargeCY = p.y; e.chargeRadius = clamp(d, 125, 200);
-        e.chargeDir = Math.random() < 0.5 ? -1 : 1;
-        e.chargeDuration = Math.PI * 2 * e.chargeRadius / 560;
-        e.chargeTele = { type: 'circle', color: '#ff3344', x: p.x, y: p.y, r: e.chargeRadius, a, dir: e.chargeDir, t: e.windup };
+        e.windup = 1.0; e.pending = 'batSine';
+        e.chargeX = (p.x - e.x) / d; e.chargeY = (p.y - e.y) / d;
+        const px = -e.chargeY, py = e.chargeX;
+        e.sineAmp = 105; e.sineWaves = 2.2; e.sineTotal = 580; // tall, smooth weave
+        const pts = [];
+        const steps = 22;
+        for (let i = 0; i <= steps; i++) {
+          const along = (i / steps) * e.sineTotal;
+          const side = Math.sin((i / steps) * e.sineWaves * Math.PI * 2) * e.sineAmp;
+          pts.push({
+            x: clamp(e.x + e.chargeX * along + px * side, WALL + 20, W - WALL - 20),
+            y: clamp(e.y + e.chargeY * along + py * side, WALL + 20, H - WALL - 20),
+          });
+        }
+        pts[0] = { x: e.x, y: e.y };
+        e.chargeDuration = pts.slice(1).reduce((sum, pt, i) => sum + Math.hypot(pt.x - pts[i].x, pt.y - pts[i].y), 0) / 600;
+        e.chargeTele = { type: 'zigzag', color: CHARGE_TELE_COLOR, points: pts, t: e.windup };
       } else e.abilityT = 0.55;
       break;
     }
@@ -388,9 +406,9 @@ function startEnemyAbility(e, p, d) {
     case 'lazeye': { // border patrol that paints a thin laser across the map
       e.windup = 0.8; e.pending = 'laser';
       if (e.borderSide === 'top' || e.borderSide === 'bottom') {
-        e.chargeTele = { type: 'line', color: '#ff3344', x1: e.x, y1: WALL + 12, x2: e.x, y2: H - WALL - 12, t: e.windup };
+        e.chargeTele = { type: 'line', color: CHARGE_TELE_COLOR, x1: e.x, y1: WALL + 12, x2: e.x, y2: H - WALL - 12, t: e.windup };
       } else {
-        e.chargeTele = { type: 'line', color: '#ff3344', x1: WALL + 12, y1: e.y, x2: W - WALL - 12, y2: e.y, t: e.windup };
+        e.chargeTele = { type: 'line', color: CHARGE_TELE_COLOR, x1: WALL + 12, y1: e.y, x2: W - WALL - 12, y2: e.y, t: e.windup };
       }
       e.abilityT = rand(2.6, 4.0);
       break;
@@ -433,11 +451,11 @@ function triggerEnemyAbility(e, p, d) {
     e.kx = (p.x - e.x) / d * 460;
     e.ky = (p.y - e.y) / d * 460;
     e.abilityT = rand(3, 4.5);
-  } else if (e.pending === 'batStraight' || e.pending === 'batZigzag' || e.pending === 'batCircle') {
+  } else if (e.pending === 'batStraight' || e.pending === 'batZigzag' || e.pending === 'batSine') {
     e.chargeMode = e.pending;
     e.chargeElapsed = 0;
-    e.chargeSpd = e.pending === 'batCircle' ? 560 : e.pending === 'batZigzag' ? 625 : 720;
-    e.charging = e.chargeDuration || (e.pending === 'batCircle' ? 1.1 : e.pending === 'batZigzag' ? 0.75 : 0.5);
+    e.chargeSpd = e.pending === 'batSine' ? 600 : e.pending === 'batZigzag' ? 625 : 720;
+    e.charging = e.chargeDuration || (e.pending === 'batSine' ? 1.0 : e.pending === 'batZigzag' ? 0.75 : 0.5);
     e.abilityT = rand(2.25, 3.4);
   } else if (e.pending === 'charge') {
     e.charging = 0.55;
@@ -605,18 +623,18 @@ function updateEnemies(dt) {
     if (e.charging > 0) {
       e.chargeElapsed = (e.chargeElapsed || 0) + dt;
       if (e.chargeMode === 'batZigzag') {
-        const side = Math.sin(e.chargeElapsed * 24) * 0.95;
+        const side = Math.sin(e.chargeElapsed * 24) * 1.7; // taller zig-zag swing
         mx = e.chargeX - e.chargeY * side;
         my = e.chargeY + e.chargeX * side;
         const mag = Math.max(0.001, Math.hypot(mx, my));
         mx /= mag; my /= mag; spd = e.chargeSpd;
-      } else if (e.chargeMode === 'batCircle') {
-        const cx = e.chargeCX || p.x, cy = e.chargeCY || p.y;
-        const rx = e.x - cx, ry = e.y - cy;
-        const rd = Math.max(1, Math.hypot(rx, ry));
-        const radial = ((e.chargeRadius || 120) - rd) / Math.max(e.chargeRadius || 120, 1);
-        mx = (-ry / rd) * (e.chargeDir || 1) + (rx / rd) * radial * 1.6;
-        my = (rx / rd) * (e.chargeDir || 1) + (ry / rd) * radial * 1.6;
+      } else if (e.chargeMode === 'batSine') {
+        // smooth sine weave: lateral velocity = derivative of the sine offset
+        const frac = Math.min(1, (e.chargeElapsed * e.chargeSpd) / (e.sineTotal || 580));
+        const omega = (e.sineWaves || 2.2) * Math.PI * 2;
+        const slope = (e.sineAmp || 105) * Math.cos(frac * omega) * omega / (e.sineTotal || 580);
+        mx = e.chargeX - e.chargeY * slope;
+        my = e.chargeY + e.chargeX * slope;
         const mag = Math.max(0.001, Math.hypot(mx, my));
         mx /= mag; my /= mag; spd = e.chargeSpd;
       } else {
