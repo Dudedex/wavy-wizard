@@ -42,9 +42,9 @@ function drawWizardAura(g, look, face, time, hurt) {
   g.restore();
 }
 
-function drawWizardClothDetails(g, look, face, time) {
+function drawWizardClothDetails(g, look, face, time, walk = 0) {
   const orb = look.orb || '#aef0ff';
-  const sway = Math.sin(time * 5) * 1.2;
+  const sway = Math.sin(time * 5) * 1.2 + walk * 0.6;
   g.save();
   g.strokeStyle = wizardAlpha(orb, 0.32);
   g.lineWidth = 1;
@@ -60,14 +60,22 @@ function drawWizardClothDetails(g, look, face, time) {
   g.font = '7px sans-serif';
   g.textAlign = 'center';
   g.fillText('✦', face * -4, 7);
+  g.fillStyle = wizardAlpha(orb, 0.55);
+  g.fillText('·', face * 3, 11);
   g.restore();
 }
 
-function drawWizardSprite(g, look, face, time, hurt) {
+function drawWizardSprite(g, look, face, time, hurt, walk = 0) {
   look = look || CHARACTERS[0].look;
   const pulse = 0.6 + Math.sin(time * 5) * 0.4;
   const hasStaff = look.hasStaff !== false;
   const hasHat = look.hasHat !== false;
+  const walkSwing = Math.sin(walk || 0);
+  const walkStep = Math.cos(walk || 0);
+  const isWalking = Math.abs(walk) > 0.001;
+  const armSwing = isWalking ? walkSwing * 3.2 : Math.sin(time * 3) * 0.5;
+  const legSwing = isWalking ? walkSwing * 3.4 : 0;
+  const clothLift = isWalking ? Math.abs(walkStep) * 1.2 : 0;
 
   drawWizardAura(g, look, face, time, hurt);
 
@@ -78,8 +86,8 @@ function drawWizardSprite(g, look, face, time, hurt) {
     g.lineWidth = 3.2;
     g.lineCap = 'round';
     g.beginPath();
-    g.moveTo(sx2 - face * 2, 14);
-    g.lineTo(sx2 + face * 2, -17);
+    g.moveTo(sx2 - face * (2 + armSwing * 0.12), 14 - clothLift);
+    g.lineTo(sx2 + face * (2 + armSwing * 0.35), -17 + armSwing * 0.15);
     g.stroke();
     g.fillStyle = look.orb;
     g.shadowColor = look.orb; g.shadowBlur = 8 + pulse * 8;
@@ -88,25 +96,44 @@ function drawWizardSprite(g, look, face, time, hurt) {
   }
 
   // robe: bell shape with wavy hem
+  // little boots appear under the robe and alternate while walking
+  g.fillStyle = '#1b1420';
+  g.beginPath(); g.ellipse(-5 - legSwing * 0.28, 17 - clothLift * 0.25, 4.4, 2.3, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(5 + legSwing * 0.28, 17 - clothLift * 0.25, 4.4, 2.3, 0, 0, Math.PI * 2); g.fill();
+
   g.fillStyle = hurt ? '#a04060' : look.robe;
   g.beginPath();
-  g.moveTo(-12, 15);
+  g.moveTo(-12, 15 - clothLift);
   g.quadraticCurveTo(-11, -2, -7, -7);
   g.lineTo(7, -7);
-  g.quadraticCurveTo(11, -2, 12, 15);
-  g.quadraticCurveTo(8, 12.5, 4, 15);
-  g.quadraticCurveTo(0, 12.5, -4, 15);
-  g.quadraticCurveTo(-8, 12.5, -12, 15);
+  g.quadraticCurveTo(11, -2, 12, 15 - clothLift);
+  g.quadraticCurveTo(8, 12.5 + legSwing * 0.08, 4, 15 + clothLift * 0.2);
+  g.quadraticCurveTo(0, 12.5 - Math.abs(legSwing) * 0.08, -4, 15 + clothLift * 0.2);
+  g.quadraticCurveTo(-8, 12.5 - legSwing * 0.08, -12, 15 - clothLift);
   g.closePath();
   g.fill();
   g.strokeStyle = 'rgba(0,0,0,0.35)';
   g.lineWidth = 2;
   g.stroke();
-  drawWizardClothDetails(g, look, face, time);
+  // contrasting robe cuffs/sleeves and embroidered trim
+  g.strokeStyle = wizardAlpha(look.trim || look.orb || '#ffffff', 0.62);
+  g.lineWidth = 1.2;
+  g.beginPath(); g.moveTo(-10, 12 - clothLift); g.quadraticCurveTo(-5, 14.5 + clothLift, 0, 13.2); g.quadraticCurveTo(5, 14.5 + clothLift, 10, 12 - clothLift); g.stroke();
+  g.strokeStyle = 'rgba(0,0,0,0.28)';
+  g.lineWidth = 3;
+  g.lineCap = 'round';
+  g.beginPath(); g.moveTo(-8, -3); g.lineTo(-12 - face * armSwing * 0.18, 7 + armSwing * 0.45); g.stroke();
+  g.beginPath(); g.moveTo(8, -3); g.lineTo(12 - face * armSwing * 0.55, 7 - armSwing * 0.35); g.stroke();
+  g.fillStyle = '#f2c9a0';
+  g.beginPath(); g.arc(-12 - face * armSwing * 0.18, 7 + armSwing * 0.45, 2.2, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(12 - face * armSwing * 0.55, 7 - armSwing * 0.35, 2.2, 0, Math.PI * 2); g.fill();
+  drawWizardClothDetails(g, look, face, time, walkSwing);
 
   // belt
   g.fillStyle = '#ffd454';
   g.fillRect(-9, 1, 18, 3);
+  g.fillStyle = '#6b3f1d';
+  g.fillRect(-1.8, 0.5, 3.6, 4);
 
   // head
   g.fillStyle = hurt ? '#ffb0a0' : '#f2c9a0';
@@ -134,6 +161,10 @@ function drawWizardSprite(g, look, face, time, hurt) {
   g.fillStyle = '#101418';
   g.beginPath(); g.arc(-2.5 + face * 1.5, -12, 1.4, 0, Math.PI * 2); g.fill();
   g.beginPath(); g.arc(2.5 + face * 1.5, -12, 1.4, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(70,40,25,0.55)';
+  g.lineWidth = 0.8;
+  g.beginPath(); g.moveTo(-5 + face * 1.2, -14.5); g.lineTo(-1 + face * 1.2, -14.1); g.stroke();
+  g.beginPath(); g.moveTo(1 + face * 1.2, -14.1); g.lineTo(5 + face * 1.2, -14.5); g.stroke();
 
   if (hasHat) {
     // wide brim + bent cone hat
@@ -147,7 +178,9 @@ function drawWizardSprite(g, look, face, time, hurt) {
     g.closePath();
     g.fill();
     g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = '#ffd454'; g.fillRect(-7, -19, 14, 2.5);
+    g.fillStyle = wizardAlpha(look.trim || '#ffd454', 0.95); g.fillRect(-7, -19, 14, 2.5);
+    g.strokeStyle = wizardAlpha(look.orb || '#ffffff', 0.45); g.lineWidth = 0.8;
+    g.beginPath(); g.moveTo(-4, -28); g.quadraticCurveTo(face * 2, -25, 5, -17); g.stroke();
     g.font = '8px sans-serif'; g.textAlign = 'center'; g.fillText('★', face * 2, -24);
   } else if (look.hood) {
     // a cowl framing the face

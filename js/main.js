@@ -3800,7 +3800,7 @@ function drawDownedBody(p) {
   ctx.save();
   ctx.globalAlpha = 0.35;
   ctx.translate(p.x, p.y);
-  drawWizardSprite(ctx, p.look, p.face || 1, performance.now() / 1000, false);
+  drawWizardSprite(ctx, p.look, p.face || 1, performance.now() / 1000, false, 0);
   ctx.restore();
   ctx.globalAlpha = 1;
   ctx.fillStyle = '#ff6b6b';
@@ -4307,7 +4307,7 @@ function render() {
     const face = p.face || 1;
     const bob = p.moving ? Math.sin(p.walkT || 0) * 1.6 : 0;
     ctx.translate(0, bob);
-    drawWizardSprite(ctx, p.look, face, performance.now() / 1000, p.hurtFlash > 0);
+    drawWizardSprite(ctx, p.look, face, performance.now() / 1000, p.hurtFlash > 0, p.moving ? (p.walkT || 0) : 0);
     ctx.restore();
 
     // green health bar above the character
