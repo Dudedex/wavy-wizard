@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wavy-Wizards — Spell Editor</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: #0a0c14;
+    color: #dfe7f2;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #wrap { display: flex; height: 100vh; gap: 0; }
+  #stage { flex: 1 1 auto; position: relative; display: flex; flex-direction: column; min-width: 0; }
+  #toolbar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 10px 16px; background: #0d1020; border-bottom: 1px solid #1d2a44;
+  }
+  #toolbar h1 { font-size: 17px; letter-spacing: 2px; color: #8be0ff; font-weight: 700; }
+  #toolbar .hint { font-size: 12.5px; color: #7e8ca3; }
+  #toolbar .spacer { flex: 1 1 auto; }
+  .tb-btn {
+    font-size: 13px; font-weight: 600;
+    padding: 7px 13px; border-radius: 8px; cursor: pointer;
+    background: #1a2438; color: #cfe2ff; border: 1px solid #3a4f74;
+  }
+  .tb-btn:hover { border-color: #5fb4ff; }
+  .tb-btn.on { background: linear-gradient(180deg,#2c7a45,#1d5530); border-color: #57c96f; color: #eaffe9; }
+  #canvas-host { flex: 1 1 auto; position: relative; }
+  canvas { display: block; width: 100%; height: 100%; background: #0d1020; cursor: crosshair; }
+
+  /* right config panel */
+  #panel {
+    flex: 0 0 340px; width: 340px;
+    background: #11182a; border-left: 1px solid #2a3a58;
+    padding: 16px; overflow-y: auto;
+  }
+  #panel h2 { font-size: 13px; letter-spacing: 2px; color: #8be0ff; margin-bottom: 12px; text-transform: uppercase; }
+  .ctrl { margin-bottom: 16px; }
+  .ctrl .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+  .ctrl label { font-size: 13px; font-weight: 600; color: #c4d4ee; }
+  .ctrl .val { font-size: 13px; font-weight: 700; color: #ffd454; font-variant-numeric: tabular-nums; }
+  .ctrl input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 6px;
+    border-radius: 4px; background: linear-gradient(90deg,#3a4a68,#5fb4ff); outline: none; cursor: pointer;
+  }
+  .ctrl input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+    background: #5fb4ff; border: 2px solid #0d1020; cursor: pointer;
+  }
+  .ctrl input[type=range]::-moz-range-thumb {
+    width: 18px; height: 18px; border-radius: 50%; background: #5fb4ff; border: 2px solid #0d1020; cursor: pointer;
+  }
+  .stat-box {
+    background: #0d1428; border: 1px solid #2a3a58; border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 14px;
+  }
+  .stat-row { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; color: #b9c8e0; }
+  .stat-row span:last-child { font-weight: 700; color: #eaf2ff; font-variant-numeric: tabular-nums; }
+  .config-head { display:flex; justify-content: space-between; align-items: center; margin: 8px 0 6px; }
+  .config-head span { font-size: 12px; letter-spacing: 1px; color: #7e8ca3; text-transform: uppercase; }
+  #copy-btn { font-size: 11px; padding: 4px 9px; }
+  pre#config {
+    background: #060912; border: 1px solid #243352; border-radius: 10px;
+    padding: 12px; font-family: "Consolas","Courier New",monospace; font-size: 12.5px;
+    color: #a8e6ff; white-space: pre; overflow-x: auto; line-height: 1.5;
+  }
+  pre#config .k { color: #8be0ff; }
+  pre#config .n { color: #ffd454; }
+  .swatch { display:inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <div id="toolbar">
+      <h1>🪄 SPELL EDITOR</h1>
+      <span class="hint">Click the map to place a dummy · drag the wizard to move it</span>
+      <span class="spacer"></span>
+      <button id="btn-clear" class="tb-btn">Clear dummies</button>
+      <button id="btn-ring" class="tb-btn on" title="Show targeting range ring">Range ring</button>
+      <button id="btn-pause" class="tb-btn">⏸ Pause</button>
+    </div>
+    <div id="canvas-host"><canvas id="cv"></canvas></div>
+  </div>
+
+  <div id="panel">
+    <h2>Spell Config</h2>
+
+    <div class="ctrl" data-key="width">
+      <div class="row"><label>Base width (px)</label><span class="val"></span></div>
+      <input type="range" min="2" max="48" step="1">
+    </div>
+    <div class="ctrl" data-key="damage">
+      <div class="row"><label>Damage</label><span class="val"></span></div>
+      <input type="range" min="1" max="500" step="1">
+    </div>
+    <div class="ctrl" data-key="speed">
+      <div class="row"><label>Speed (px/s)</label><span class="val"></span></div>
+      <input type="range" min="60" max="1400" step="10">
+    </div>
+    <div class="ctrl" data-key="cooldown">
+      <div class="row"><label>Cooldown (s)</label><span class="val"></span></div>
+      <input type="range" min="0.1" max="3" step="0.05">
+    </div>
+
+    <div class="stat-box">
+      <div class="stat-row"><span>Theoretical DPS</span><span id="st-dps">—</span></div>
+      <div class="stat-row"><span>Casts / sec</span><span id="st-rate">—</span></div>
+      <div class="stat-row"><span>Live hits/s</span><span id="st-hits">—</span></div>
+      <div class="stat-row"><span>Dummies</span><span id="st-enemies">0</span></div>
+    </div>
+
+    <div class="config-head">
+      <span>Resulting config</span>
+      <button id="copy-btn" class="tb-btn">Copy</button>
+    </div>
+    <pre id="config"></pre>
+  </div>
+</div>
+
+<script>
+'use strict';
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+// ---------------------------------------------------------------------------
+// Editable spell parameters (the four the editor exposes)
+// ---------------------------------------------------------------------------
+const spell = { width: 12, damage: 40, speed: 520, cooldown: 0.6 };
+const SPELL_COLOR = '#7be1ff';
+const RANGE = 560;          // targeting range (fixed for the sandbox)
+const ENEMY_R = 16;
+const ENEMY_HP = 200;
+
+// ---------------------------------------------------------------------------
+// World state
+// ---------------------------------------------------------------------------
+const wizard = { x: 200, y: 300, r: 16, dragging: false };
+let enemies = [];           // { x, y, hp, maxHp, dead, respawnT }
+let shots = [];             // { x, y, vx, vy, life }
+let castT = 0;
+let paused = false;
+let showRing = true;
+let hitsWindow = [];        // timestamps of recent hits, for live hits/sec
+
+// ---------------------------------------------------------------------------
+// Canvas sizing
+// ---------------------------------------------------------------------------
+function resize() {
+  const host = document.getElementById('canvas-host');
+  cv.width = host.clientWidth;
+  cv.height = host.clientHeight;
+}
+window.addEventListener('resize', resize);
+
+// ---------------------------------------------------------------------------
+// Input: place dummies, drag the wizard
+// ---------------------------------------------------------------------------
+function canvasPos(e) {
+  const r = cv.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+cv.addEventListener('mousedown', e => {
+  const p = canvasPos(e);
+  // grab the wizard if clicked near it
+  if (Math.hypot(p.x - wizard.x, p.y - wizard.y) <= wizard.r + 8) { wizard.dragging = true; return; }
+  // click an existing dummy to remove it; otherwise place a new one
+  const hit = enemies.find(en => Math.hypot(p.x - en.x, p.y - en.y) <= ENEMY_R + 4);
+  if (hit) enemies = enemies.filter(en => en !== hit);
+  else enemies.push({ x: p.x, y: p.y, hp: ENEMY_HP, maxHp: ENEMY_HP, dead: false, respawnT: 0 });
+});
+window.addEventListener('mousemove', e => {
+  if (!wizard.dragging) return;
+  const p = canvasPos(e);
+  wizard.x = Math.max(wizard.r, Math.min(cv.width - wizard.r, p.x));
+  wizard.y = Math.max(wizard.r, Math.min(cv.height - wizard.r, p.y));
+});
+window.addEventListener('mouseup', () => { wizard.dragging = false; });
+
+document.getElementById('btn-clear').onclick = () => { enemies = []; shots = []; };
+document.getElementById('btn-ring').onclick = e => { showRing = !showRing; e.target.classList.toggle('on', showRing); };
+document.getElementById('btn-pause').onclick = e => {
+  paused = !paused;
+  e.target.textContent = paused ? '▶ Play' : '⏸ Pause';
+  e.target.classList.toggle('on', paused);
+};
+
+// ---------------------------------------------------------------------------
+// Sliders bound to the spell object
+// ---------------------------------------------------------------------------
+document.querySelectorAll('.ctrl').forEach(ctrl => {
+  const key = ctrl.dataset.key;
+  const input = ctrl.querySelector('input');
+  const val = ctrl.querySelector('.val');
+  input.value = spell[key];
+  const fmt = () => key === 'cooldown' ? spell[key].toFixed(2) + 's' : String(spell[key]);
+  const sync = () => { val.textContent = fmt(); };
+  input.addEventListener('input', () => {
+    spell[key] = key === 'cooldown' ? parseFloat(input.value) : parseInt(input.value, 10);
+    sync(); updateConfig();
+  });
+  sync();
+});
+
+// ---------------------------------------------------------------------------
+// Config readout (the spell definition these values produce)
+// ---------------------------------------------------------------------------
+function updateConfig() {
+  const cfg = {
+    radius: spell.width,
+    dmg: spell.damage,
+    speed: spell.speed,
+    cd: +spell.cooldown.toFixed(2),
+    range: RANGE,
+  };
+  const lines = Object.entries(cfg).map(([k, v]) =>
+    `  <span class="k">${k}</span>: <span class="n">${v}</span>,`);
+  document.getElementById('config').innerHTML = '{\n' + lines.join('\n') + '\n}';
+}
+document.getElementById('copy-btn').onclick = () => {
+  const cfg = { radius: spell.width, dmg: spell.damage, speed: spell.speed, cd: +spell.cooldown.toFixed(2), range: RANGE };
+  const text = JSON.stringify(cfg, null, 2);
+  navigator.clipboard && navigator.clipboard.writeText(text);
+  const b = document.getElementById('copy-btn');
+  b.textContent = 'Copied!'; setTimeout(() => (b.textContent = 'Copy'), 900);
+};
+
+// ---------------------------------------------------------------------------
+// Floating damage numbers
+// ---------------------------------------------------------------------------
+let texts = [];
+function addText(x, y, str, color) { texts.push({ x, y, str, color, t: 0 }); }
+
+// ---------------------------------------------------------------------------
+// Simulation
+// ---------------------------------------------------------------------------
+function nearestEnemy() {
+  let best = null, bestD = RANGE;
+  for (const en of enemies) {
+    if (en.dead) continue;
+    const d = Math.hypot(en.x - wizard.x, en.y - wizard.y);
+    if (d <= bestD) { bestD = d; best = en; }
+  }
+  return best;
+}
+
+function update(dt) {
+  // auto-cast toward the nearest dummy
+  castT -= dt;
+  if (castT <= 0) {
+    const target = nearestEnemy();
+    if (target) {
+      castT = spell.cooldown;
+      const a = Math.atan2(target.y - wizard.y, target.x - wizard.x);
+      shots.push({ x: wizard.x, y: wizard.y, vx: Math.cos(a) * spell.speed, vy: Math.sin(a) * spell.speed, life: RANGE / spell.speed + 0.3 });
+    }
+  }
+  // advance shots, resolve hits
+  for (const s of shots) {
+    s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
+    for (const en of enemies) {
+      if (en.dead) continue;
+      if (Math.hypot(s.x - en.x, s.y - en.y) <= spell.width + ENEMY_R) {
+        en.hp -= spell.damage;
+        addText(en.x, en.y - ENEMY_R - 4, '-' + spell.damage, '#ff6b6b');
+        hitsWindow.push(performance.now());
+        s.life = 0;
+        if (en.hp <= 0) { en.dead = true; en.respawnT = 1.0; addText(en.x, en.y, 'KO', '#ffd454'); }
+        break;
+      }
+    }
+    if (s.x < -20 || s.x > cv.width + 20 || s.y < -20 || s.y > cv.height + 20) s.life = 0;
+  }
+  shots = shots.filter(s => s.life > 0);
+  // dummies regenerate so you can keep observing interactions
+  for (const en of enemies) {
+    if (en.dead) { en.respawnT -= dt; if (en.respawnT <= 0) { en.dead = false; en.hp = en.maxHp; } }
+    else if (en.hp < en.maxHp) en.hp = Math.min(en.maxHp, en.hp + en.maxHp * 0.15 * dt);
+  }
+  for (const t of texts) { t.t += dt; t.y -= 22 * dt; }
+  texts = texts.filter(t => t.t < 0.9);
+}
+
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  // subtle grid
+  ctx.strokeStyle = 'rgba(80,110,180,0.08)'; ctx.lineWidth = 1;
+  for (let x = 0; x < cv.width; x += 48) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, cv.height); ctx.stroke(); }
+  for (let y = 0; y < cv.height; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cv.width, y); ctx.stroke(); }
+
+  // targeting range ring
+  if (showRing) {
+    ctx.strokeStyle = 'rgba(123,225,255,0.22)'; ctx.setLineDash([6, 8]); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(wizard.x, wizard.y, RANGE, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // enemies
+  for (const en of enemies) {
+    if (en.dead) {
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = '#7e8ca3';
+      ctx.beginPath(); ctx.arc(en.x, en.y, ENEMY_R, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    ctx.fillStyle = '#d65a5a';
+    ctx.beginPath(); ctx.arc(en.x, en.y, ENEMY_R, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ff9a9a'; ctx.lineWidth = 2; ctx.stroke();
+    // hp bar
+    const bw = 34, pct = Math.max(0, en.hp / en.maxHp);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(en.x - bw / 2, en.y - ENEMY_R - 9, bw, 4);
+    ctx.fillStyle = '#57c96f'; ctx.fillRect(en.x - bw / 2, en.y - ENEMY_R - 9, bw * pct, 4);
+  }
+
+  // shots (radius = base width)
+  ctx.fillStyle = SPELL_COLOR; ctx.shadowColor = SPELL_COLOR; ctx.shadowBlur = 10;
+  for (const s of shots) { ctx.beginPath(); ctx.arc(s.x, s.y, spell.width, 0, Math.PI * 2); ctx.fill(); }
+  ctx.shadowBlur = 0;
+
+  // wizard
+  ctx.fillStyle = '#3a55c9';
+  ctx.beginPath(); ctx.arc(wizard.x, wizard.y, wizard.r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#8be0ff'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#eaf2ff'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🧙', wizard.x, wizard.y + 1);
+
+  // floating numbers
+  ctx.textBaseline = 'alphabetic';
+  for (const t of texts) {
+    ctx.globalAlpha = Math.max(0, 1 - t.t / 0.9);
+    ctx.fillStyle = t.color; ctx.font = 'bold 15px "Segoe UI", sans-serif';
+    ctx.fillText(t.str, t.x, t.y);
+  }
+  ctx.globalAlpha = 1;
+
+  // empty-state hint
+  if (!enemies.length) {
+    ctx.fillStyle = '#5a6a88'; ctx.font = '15px "Segoe UI", sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Click anywhere to drop a target dummy', cv.width / 2, cv.height / 2);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Live stats panel
+// ---------------------------------------------------------------------------
+function updateStats() {
+  const dps = spell.damage / spell.cooldown;
+  document.getElementById('st-dps').textContent = Math.round(dps);
+  document.getElementById('st-rate').textContent = (1 / spell.cooldown).toFixed(2);
+  const now = performance.now();
+  hitsWindow = hitsWindow.filter(t => now - t < 1000);
+  document.getElementById('st-hits').textContent = hitsWindow.length;
+  document.getElementById('st-enemies').textContent = enemies.length;
+}
+
+// ---------------------------------------------------------------------------
+// Main loop
+// ---------------------------------------------------------------------------
+let last = performance.now();
+function frame(now) {
+  let dt = (now - last) / 1000; last = now;
+  dt = Math.min(dt, 0.05);
+  if (!paused) update(dt);
+  draw();
+  updateStats();
+  requestAnimationFrame(frame);
+}
+
+resize();
+updateConfig();
+// drop two dummies so there's something to see immediately
+enemies.push({ x: cv.width * 0.62, y: cv.height * 0.38, hp: ENEMY_HP, maxHp: ENEMY_HP, dead: false, respawnT: 0 });
+enemies.push({ x: cv.width * 0.7, y: cv.height * 0.62, hp: ENEMY_HP, maxHp: ENEMY_HP, dead: false, respawnT: 0 });
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -381,9 +381,8 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 
 /* ---------- shop damage report ---------- */
 #shop-meter {
-  position: absolute;
-  bottom: 18px; left: 18px;
-  min-width: 280px; max-width: 330px;
+  width: min(680px, 96%);
+  margin: 0 auto;
   display: none;
 }
 .meter-row {
@@ -483,14 +482,37 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
   box-shadow: 0 0 18px rgba(255, 212, 84, 0.28);
 }
 #shop-summary {
-  position: absolute;
-  bottom: 18px; right: 18px;
-  min-width: 230px; max-width: 270px;
+  width: min(680px, 96%);
+  margin: 0 auto;
 }
-.sum-line { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; color: #b9c8e0; }
+.sum-line { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 2px 0; color: #b9c8e0; }
+.sum-line span:last-child { white-space: nowrap; }
 .sum-line span:last-child { font-weight: 600; color: #eaf2ff; }
 .sum-tip { margin-top: 7px; font-size: 12.5px; color: #ffd454; }
 .elem-pip { font-size: 13px; font-weight: 700; margin-left: 4px; }
+
+/* polished offer cards: subtle depth + lift on hover */
+#shop-offers .card {
+  background: linear-gradient(180deg, #172138, #10172a);
+  transition: transform 0.09s ease, border-color 0.09s, box-shadow 0.09s;
+}
+#shop-offers .card:hover {
+  transform: translateY(-3px);
+  border-color: #5fb4ff;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+}
+#shop-offers .card.locked:hover { border-color: #ffd454; }
+
+/* The 3-column shop (stats · offers · owned) is ~1550px wide. Below that, reflow
+   so it fits without overflowing or colliding with the summary/meter panels:
+   offers span the full width on top, the two side panels share a row beneath. */
+@media (max-width: 1560px) {
+  #shop-layout { flex-wrap: wrap; }
+  #shop-main { flex: 1 1 100%; width: auto; order: -1; }
+  #shop-stats, #shop-owned {
+    flex: 1 1 300px; width: auto; min-width: 0; max-width: 520px;
+  }
+}
 
 /* ---------- post-run build summary ---------- */
 .run-summary { width: 460px; max-width: 92vw; margin: 6px 0 12px; text-align: left; }

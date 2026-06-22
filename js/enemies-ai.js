@@ -439,15 +439,11 @@ function startEnemyAbility(e, p, d) {
       e.windup = 0.5; e.pending = null; e.reflect = 1.2;
       e.abilityT = rand(4, 6);
       break;
-    case 'nuller': { // silence the player's nearest auto-cast spell
-      const auto = game.player.spells.filter(s => s.auto !== false && s.id !== 'orbs' && !(s.disabled > 0));
-      if (auto.length) {
-        const sp = pick(auto);
-        sp.disabled = 4;
-        addText(p.x, p.y - 50, `${SPELLS[sp.id].name} silenced!`, '#b08aff', 16);
-        game.beams.push({ pts: [{ x: e.x, y: e.y }, { x: p.x, y: p.y }], t: 0, dur: 0.3, color: '#b08aff', width: 3 });
-      }
-      e.abilityT = rand(5, 7);
+    case 'nuller': { // no longer silences — just lobs an arcane bolt at the player
+      const a = Math.atan2(p.y - e.y, p.x - e.x);
+      const spd = 240;
+      game.enemyProjectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, dmg: e.dmg, r: 7, life: 4, color: '#b08aff' });
+      e.abilityT = rand(3, 5);
       break;
     }
     case 'bomber': // detonation is driven by proximity, not the ability timer

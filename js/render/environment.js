@@ -441,7 +441,7 @@ function drawWorldSpawn(ws) {
     }
   } else {
     // treasure chest item event (scaled up to match the bigger pickup radius)
-    g.scale(1.7, 1.7);
+    g.scale(1.4, 1.4);
     g.shadowColor = '#ffd454'; g.shadowBlur = ws.active ? 14 : 8;
     g.fillStyle = '#7a431d';
     g.strokeStyle = '#ffd454';

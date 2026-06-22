@@ -2263,7 +2263,7 @@ function startWave(n) {
       x = rand(WALL + 90, W - WALL - 90); y = rand(WALL + 90, H - WALL - 90);
       if (dist2(x, y, W / 2, H / 2) > 200 * 200 && game.worldSpawns.every(o => dist2(x, y, o.x, o.y) > 200 * 200)) break;
     }
-    game.worldSpawns.push({ kind, x, y, r: kind === 'magnet' ? 24 : 46, prog: 0, t: 0 });
+    game.worldSpawns.push({ kind, x, y, r: kind === 'magnet' ? 24 : 38, prog: 0, t: 0 });
   }
 
   // schedule a possible world event mid-round (wave 5+, 33% chance)
@@ -2333,6 +2333,8 @@ function startWave(n) {
 
 function endWave() {
   const p = game.player;
+  // capture this before enemies are cleared below — for the mighty-boost gate
+  const bossStillAlive = game.enemies.some(e => e.boss && !e.dead);
   // "Untouchable": tally lifetime flawless wave clears (no hit taken), unlock at 10
   if (!game.tookDamageThisWave) bumpFlawlessWaves();
   // "Rooted to the Spot": clear a wave without ever moving
@@ -2371,7 +2373,11 @@ function endWave() {
   const bonus = 8 + game.wave;
   game.gold += bonus; game.goldEarned += bonus;
   game.player.hp = game.player.stats.maxHp; // full heal between waves
-  if (bossCountForWave(game.wave) > 0) game.pendingMightyBoosts++;
+  // Mighty boost is earned only by actually slaying the boss — not by outlasting
+  // the timer while it's still alive.
+  if (bossCountForWave(game.wave) > 0 && game.bossSpawned && !bossStillAlive) {
+    game.pendingMightyBoosts++;
+  }
   addText(p.x, p.y - 64, `Wave clear! +${bonus} gold`, '#ffd454', 18);
   if (coins > 0) addText(p.x, p.y - 44, `Banked ${banked} · Budget +${toBudget} · Voided ${voided}`, '#9fb0c8', 14);
   game.state = 'waveend';
@@ -3920,6 +3926,19 @@ function drawFriendlyZone(x, y, r, fillA, strokeA) {
   ctx.restore();
 }
 
+// Countdown (seconds remaining) shown in the centre of a buff zone.
+function drawZoneTimer(x, y, remaining) {
+  const s = Math.max(0, Math.ceil(remaining));
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 15px "Segoe UI", sans-serif';
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+  ctx.strokeText(s + 's', x, y);
+  ctx.fillStyle = '#eaf2ff';
+  ctx.fillText(s + 's', x, y);
+  ctx.restore();
+}
+
 // Draws round-effect gadgets (decoy, flashbang, turret, totem) + stun markers.
 function drawGadgets() {
   const now = performance.now();
@@ -3928,8 +3947,9 @@ function drawGadgets() {
   for (const to of game.totems) {
     const pulse = 0.5 + Math.sin(now / 300) * 0.5;
     drawFriendlyZone(to.x, to.y, to.radius, 0.10 + pulse * 0.10, 0.7);
-    ctx.globalAlpha = 1; ctx.font = '22px sans-serif';
-    ctx.fillText('🪅', to.x, to.y + 8);
+    ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic'; ctx.font = '20px sans-serif';
+    ctx.fillText('🪅', to.x, to.y - 6);
+    drawZoneTimer(to.x, to.y + 14, to.dur - to.t);
   }
   // arcane turrets
   for (const tr of game.turrets) {
@@ -3960,13 +3980,15 @@ function drawGadgets() {
   for (const b of game.banners) {
     const active = livePlayers().some(pl => dist2(b.x, b.y, pl.x, pl.y) <= b.radius * b.radius);
     drawFriendlyZone(b.x, b.y, b.radius, active ? 0.16 : 0.07, active ? 0.9 : 0.5);
-    ctx.globalAlpha = 1; ctx.font = '24px sans-serif'; ctx.fillText('🚩', b.x, b.y + 8);
+    ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic'; ctx.font = '22px sans-serif'; ctx.fillText('🚩', b.x, b.y - 6);
+    drawZoneTimer(b.x, b.y + 15, b.dur - b.t);
   }
   // time bubbles — friendly slow-zone dome
   for (const bub of game.bubbles) {
     const fade = bub.t > bub.dur - 0.6 ? Math.max(0.2, bub.dur - bub.t) : 1;
     drawFriendlyZone(bub.x, bub.y, bub.radius, 0.14 * fade, 0.7 * fade);
-    ctx.globalAlpha = 1; ctx.font = '20px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('⏳', bub.x, bub.y + 7);
+    ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = '18px sans-serif'; ctx.fillText('⏳', bub.x, bub.y - 6);
+    drawZoneTimer(bub.x, bub.y + 14, bub.dur - bub.t);
   }
   // black holes — swirling singularity with an inward pull ring
   for (const bh of game.blackholes) {
@@ -4393,11 +4415,12 @@ function render() {
   const spellNow = performance.now() / 1000;
   for (const pr of game.projectiles) drawSpellProjectileAsset(ctx, pr, spellNow);
   for (const pr of game.enemyProjectiles) {
+    // damaging projectiles always read red so threats are unmistakable
     const hc = game.opt.hiContrast;
     const rr = hc ? pr.r + 2 : pr.r;
     if (hc) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; }
-    ctx.fillStyle = hc ? '#ff2d6b' : pr.color;
-    ctx.shadowColor = hc ? '#ff2d6b' : pr.color; ctx.shadowBlur = 8;
+    ctx.fillStyle = '#ff3344';
+    ctx.shadowColor = '#ff3344'; ctx.shadowBlur = 8;
     ctx.beginPath(); ctx.arc(pr.x, pr.y, rr, 0, Math.PI * 2); ctx.fill();
     if (hc) ctx.stroke();
     ctx.shadowBlur = 0;
@@ -4728,8 +4751,13 @@ function drawHUD() {
         ctx.fillRect(mx + 26, y + 3, (mw - 105) * (v / max), rowH - 7);
         ctx.font = '13px sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillStyle = '#fff';
-        ctx.fillText(def.icon, mx + 7, y + 15);
+        if (def.breath) {
+          // all breaths share one base glyph; the colour tells which element
+          drawBreathIcon(ctx, mx + 13, y + 9, def.color);
+        } else {
+          ctx.fillStyle = '#fff';
+          ctx.fillText(def.icon, mx + 7, y + 15);
+        }
         ctx.fillStyle = def.color;
         ctx.font = 'bold 11px "Segoe UI", sans-serif';
         ctx.fillText(`${formatNum(v)} · ${formatNum(v / t)}/s`, mx + 30, y + 14);
@@ -4754,6 +4782,21 @@ function drawHUD() {
 
 function formatNum(n) {
   return n >= 10000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n));
+}
+
+// A single "breath" glyph (three streaming wavy lines) drawn in an element colour,
+// so every breath spell shares one base icon distinguished only by its colour.
+function drawBreathIcon(g, cx, cy, color) {
+  g.save();
+  g.strokeStyle = color; g.lineWidth = 1.6; g.lineCap = 'round';
+  for (let i = 0; i < 3; i++) {
+    const yy = cy + (i - 1) * 4.5;
+    g.beginPath();
+    g.moveTo(cx - 7, yy);
+    g.bezierCurveTo(cx - 2, yy - 3, cx + 2, yy + 3, cx + 7, yy - 1);
+    g.stroke();
+  }
+  g.restore();
 }
 
 // Colour signed numbers in effect text by whether they HELP (green) or HURT (red),
