@@ -11,7 +11,8 @@ const SPELL_SFX_GAIN = 0.68;
 
 let music = null;
 const MUSIC_LOOKAHEAD = 0.18;
-const MUSIC_STEP = 0.5;
+const MUSIC_MENU_STEP = 0.5;
+const MUSIC_GAME_STEP = 0.34;
 const MUSIC_PATTERN = [
   { root: 146.83, fifth: 220.00, top: 369.99 }, // Dm9-ish
   { root: 130.81, fifth: 196.00, top: 329.63 }, // Cmaj7-ish
@@ -40,16 +41,25 @@ function makeMusic() {
   const pad = audioCtx.createGain();
   const sparkle = audioCtx.createGain();
   const lowpass = audioCtx.createBiquadFilter();
+  const spaceDelay = audioCtx.createDelay();
+  const delayFeedback = audioCtx.createGain();
+  const spaceWet = audioCtx.createGain();
   lowpass.type = 'lowpass';
   lowpass.frequency.value = 1850;
   lowpass.Q.value = 0.7;
+  spaceDelay.delayTime.value = 0.42;
+  delayFeedback.gain.value = 0.28;
+  spaceWet.gain.value = 0;
   pad.gain.value = 1;
   sparkle.gain.value = 1;
   pad.connect(lowpass).connect(master);
   sparkle.connect(master);
+  sparkle.connect(spaceDelay);
+  spaceDelay.connect(delayFeedback).connect(spaceDelay);
+  spaceDelay.connect(spaceWet).connect(master);
   master.gain.value = 0;
   master.connect(audioCtx.destination);
-  return { master, pad, sparkle, timer: null, next: audioCtx.currentTime, step: 0, running: false };
+  return { master, pad, sparkle, spaceWet, timer: null, next: audioCtx.currentTime, step: 0, running: false };
 }
 
 function musicLevel() {
@@ -59,6 +69,10 @@ function musicLevel() {
   if (game.state === 'playing') return 0.9 * base;
   if (['paused', 'levelup', 'mastery', 'shop', 'settings'].includes(game.state)) return 0.32 * base;
   return 0;
+}
+
+function currentMusicStep() {
+  return typeof game !== 'undefined' && game.state === 'playing' ? MUSIC_GAME_STEP : MUSIC_MENU_STEP;
 }
 
 function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1) {
@@ -108,16 +122,22 @@ function scheduleMusicStep() {
   const chord = MUSIC_PATTERN[Math.floor(barStep / 8) % MUSIC_PATTERN.length];
   const t = music.next;
   if (barStep % 8 === 0) {
-    scheduleMusicTone(chord.root, t, 4.4, 'sine', 0.055, music.pad, -0.22, 1.004);
-    scheduleMusicTone(chord.fifth, t + 0.08, 4.2, 'triangle', 0.034, music.pad, 0.18, 0.997);
-    scheduleMusicTone(chord.top, t + 0.18, 3.8, 'sine', 0.022, music.pad, 0.38, 1.002);
+    scheduleMusicTone(chord.root, t, game.state === 'playing' ? 3.0 : 4.4, 'sine', 0.055, music.pad, -0.22, 1.004);
+    scheduleMusicTone(chord.fifth, t + 0.08, game.state === 'playing' ? 2.8 : 4.2, 'triangle', 0.034, music.pad, 0.18, 0.997);
+    scheduleMusicTone(chord.top, t + 0.18, game.state === 'playing' ? 2.5 : 3.8, 'sine', 0.022, music.pad, 0.38, 1.002);
   }
   if ([2, 5].includes(barStep % 8)) {
     const note = [chord.top, chord.fifth * 2, chord.root * 3, chord.top * 1.5][Math.floor(Math.random() * 4)];
     scheduleMusicTone(note, t + 0.03, 1.25, 'sine', 0.018, music.sparkle, Math.random() * 1.4 - 0.7, 1.015);
   }
   if (barStep % 4 === 3) scheduleMusicNoise(t + 0.12, 1.1, 0.014, Math.random() * 1.2 - 0.6);
-  music.next += MUSIC_STEP;
+  if (typeof game !== 'undefined' && game.state === 'playing' && [1, 3, 6].includes(barStep % 8)) {
+    const starNotes = [chord.top * 2, chord.fifth * 3, chord.root * 4, chord.top * 3];
+    const star = starNotes[Math.floor(Math.random() * starNotes.length)];
+    scheduleMusicTone(star, t + 0.02, 0.72, 'sine', 0.012, music.sparkle, Math.random() * 1.6 - 0.8, 1.025);
+    scheduleMusicTone(star * 1.505, t + 0.16, 0.52, 'triangle', 0.006, music.sparkle, Math.random() * 1.6 - 0.8, 0.985);
+  }
+  music.next += currentMusicStep();
   music.step++;
 }
 
@@ -129,6 +149,7 @@ function updateSoundtrack() {
   const t = audioCtx.currentTime;
   music.master.gain.cancelScheduledValues(t);
   music.master.gain.setTargetAtTime(target, t, target > 0 ? 0.8 : 0.25);
+  if (music.spaceWet) music.spaceWet.gain.setTargetAtTime(game.state === 'playing' ? 1 : 0, t, 0.35);
   if (target > 0 && !music.running) {
     music.running = true;
     music.next = Math.max(music.next || t, t + 0.04);
