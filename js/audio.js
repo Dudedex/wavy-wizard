@@ -12,8 +12,8 @@ const SPELL_SFX_GAIN = 0.68;
 let music = null;
 const MUSIC_LOOKAHEAD = 0.18;
 const MUSIC_MENU_STEP = 0.5;
-const MUSIC_GAME_START_STEP = 0.46;
-const MUSIC_GAME_END_STEP = 0.26;
+const MUSIC_GAME_START_STEP = 0.44;
+const MUSIC_GAME_END_STEP = 0.18;
 const MUSIC_PATTERN = [
   { root: 146.83, fifth: 220.00, top: 369.99 }, // Dm9-ish
   { root: 130.81, fifth: 196.00, top: 329.63 }, // Cmaj7-ish
@@ -80,7 +80,9 @@ function roundProgress() {
 
 function currentMusicStep() {
   if (typeof game === 'undefined' || game.state !== 'playing') return MUSIC_MENU_STEP;
-  const rush = roundProgress();
+  // Ease out so combat tempo ramps noticeably earlier instead of saving the
+  // speed-up for only the final seconds.
+  const rush = Math.sqrt(roundProgress());
   return MUSIC_GAME_START_STEP + (MUSIC_GAME_END_STEP - MUSIC_GAME_START_STEP) * rush;
 }
 
