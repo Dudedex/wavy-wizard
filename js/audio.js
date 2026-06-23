@@ -158,7 +158,7 @@ function scheduleCombatNoise(start, dur, vol) {
 
 function scheduleHeartbeatPhrase(start, root, gain) {
   if (!music || !audioCtx || gain <= 0) return;
-  // Low "dö-dö-dömm-döm, dö dö dömm" phrase for the final-ten countdown.
+  // Low "dö-dö-dömm-döm, dö dö dömm" phrase under the combat soundtrack.
   const hits = [
     [0.00, root, 0.10, 0.036], [0.12, root, 0.10, 0.030], [0.24, root * 0.75, 0.18, 0.050],
     [0.42, root * 0.9, 0.13, 0.038], [0.68, root, 0.10, 0.030], [0.86, root, 0.10, 0.028],
@@ -185,9 +185,9 @@ function scheduleMusicStep() {
     scheduleMusicTone(pulse, t, 0.20, 'triangle', 0.030 + urgency * 0.016, music.pad, -0.05, 0.72);
     if (barStep % 2 === 1) scheduleCombatNoise(t + 0.04, 0.16, 0.018 + urgency * 0.010);
     if (urgency > 0.65 && barStep % 2 === 0) scheduleMusicTone(chord.root, t + currentMusicStep() * 0.48, 0.12, 'triangle', 0.012, music.pad, 0.08, 0.86);
-    if (heartbeat > 0 && t >= (music.nextHeartbeat || 0)) {
-      scheduleHeartbeatPhrase(t, pulse, 0.55 + heartbeat * 0.9);
-      music.nextHeartbeat = t + 1.25 - heartbeat * 0.55;
+    if (t >= (music.nextHeartbeat || 0)) {
+      scheduleHeartbeatPhrase(t, pulse, 0.34 + heartbeat * 1.1);
+      music.nextHeartbeat = t + 2.15 - heartbeat * 1.45;
     }
   }
   if ([2, 5].includes(barStep % 8)) {
