@@ -21,6 +21,12 @@ html, body {
   width: 100vw; height: 100vh;
   display: flex; align-items: center; justify-content: center;
 }
+/* fullscreen: fill the screen and paint the page bg behind the letterboxed canvas */
+#game-wrap:fullscreen,
+#game-wrap:-webkit-full-screen {
+  width: 100vw; height: 100vh;
+  background: #0a0c14;
+}
 
 canvas#game {
   cursor: none; /* the wizard is your pointer */

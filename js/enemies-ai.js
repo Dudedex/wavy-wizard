@@ -71,7 +71,7 @@ function spawnEnemy(type, x, y, opts) {
     type, name: def.name, r: def.r,
     x, y,
     hp: Math.round(def.hp * sc.hp * dangerHp * (game.debtHpMult || 1)), maxHp: Math.round(def.hp * sc.hp * dangerHp * (game.debtHpMult || 1)),
-    spd: def.spd * sc.spd * (game.debtSpdMult || 1), dmg: def.dmg * sc.dmg * dangerDmg,
+    spd: def.spd * sc.spd * 1.16 * (game.debtSpdMult || 1), dmg: def.dmg * sc.dmg * dangerDmg, // basic enemy base ≈95
     color: def.color, gems: def.gems,
     ranged: def.ranged ? { ...def.ranged, t: rand(0.5, def.ranged.cd) } : null,
     splitsInto: def.splitsInto || null,

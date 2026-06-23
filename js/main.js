@@ -7,10 +7,15 @@
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const W = canvas.width, H = canvas.height;
+// Viewport = the canvas surface the camera renders into (what you see on screen).
+const VIEW_W = canvas.width, VIEW_H = canvas.height;
+// World = the playable arena, 50% bigger than the viewport in both directions.
+// A follow-camera scrolls the viewport across this larger world.
+const W = Math.round(VIEW_W * 1.5), H = Math.round(VIEW_H * 1.5);
 
 function updateUiScale() {
-  const scale = Math.max(0.55, Math.min(1, Math.min(window.innerWidth / W, window.innerHeight / H)));
+  // HTML overlays (menus/HUD scaling) size to the viewport, not the larger world.
+  const scale = Math.max(0.55, Math.min(1, Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H)));
   document.documentElement.style.setProperty('--ui-scale', scale.toFixed(3));
   document.documentElement.style.setProperty('--ui-inv-scale', (1 / scale).toFixed(3));
   document.documentElement.style.setProperty('--ui-width', `${window.innerWidth / scale}px`);
@@ -19,6 +24,7 @@ function updateUiScale() {
 window.addEventListener('resize', updateUiScale);
 updateUiScale();
 const WALL = 26; // arena wall thickness
+const PROJ_SPEED_MULT = 1.05; // global +5% to player projectile travel speed
 
 // ---------------------------------------------------------------------------
 // Utils
@@ -212,8 +218,8 @@ canvas.addEventListener('mousemove', e => {
   const boxes = game.meterBoxes || [];
   if (!boxes.length) { hideTooltip(); return; }
   const rect = canvas.getBoundingClientRect();
-  const cx = (e.clientX - rect.left) * (W / rect.width);
-  const cy = (e.clientY - rect.top) * (H / rect.height);
+  const cx = (e.clientX - rect.left) * (VIEW_W / rect.width);
+  const cy = (e.clientY - rect.top) * (VIEW_H / rect.height);
   const hit = boxes.find(b => cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h);
   if (hit) {
     const sp = game.player.spells.find(s => s.id === hit.id) || { id: hit.id, tier: 0 };
@@ -338,6 +344,7 @@ const game = {
   totalDmg: 0, runTime: 0, // cumulative run damage & combat time → overall DPS
   runDmg: {}, goldEarned: 0, bestWave: { wave: 0, dps: 0 }, lastHurtBy: null, // post-run summary
   slowmo: 0, // brief bullet-time (Last Resort break)
+  cam: { x: (W - VIEW_W) / 2, y: (H - VIEW_H) / 2 }, // follow-camera top-left (world coords)
   player: freshPlayer(),
   coop: false, p2: null, // couch co-op: second local player
   enemies: [], projectiles: [], enemyProjectiles: [],
@@ -1550,8 +1557,8 @@ function updateProjectiles(dt) {
       pr.vx = Math.cos(cur + turn) * spd;
       pr.vy = Math.sin(cur + turn) * spd;
     }
-    pr.x += pr.vx * dt;
-    pr.y += pr.vy * dt;
+    pr.x += pr.vx * dt * PROJ_SPEED_MULT;
+    pr.y += pr.vy * dt * PROJ_SPEED_MULT;
     // trail
     if (!game.opt.lowFx && Math.random() < 0.5) game.particles.push({ x: pr.x, y: pr.y, vx: 0, vy: 0, t: 0, dur: 0.2, color: pr.color, r: pr.r * 0.5 });
 
@@ -2190,6 +2197,11 @@ function collectGoldGem(g, p) {
 // ---------------------------------------------------------------------------
 function startWave(n) {
   game.wave = n;
+  // snap the camera onto the player so the wave doesn't open with a pan
+  if (game.player) {
+    game.cam.x = clamp(game.player.x - VIEW_W / 2, 0, Math.max(0, W - VIEW_W));
+    game.cam.y = clamp(game.player.y - VIEW_H / 2, 0, Math.max(0, H - VIEW_H));
+  }
   // Cursed King: bleeds max HP each new wave unless a relic was bought last shop.
   const p0 = game.player;
   if (n > 1 && p0 && p0.stats.cursedKing && !p0.boughtRelic) {
@@ -3511,6 +3523,23 @@ document.getElementById('btn-danger-start').onclick = () => {
 };
 document.getElementById('btn-settings').onclick = () => openSettings('title');
 document.getElementById('btn-achievements').onclick = () => { sfx('buy'); showAchievements(); };
+
+// Fullscreen: take over the whole screen (no browser chrome). Toggles on the
+// game wrapper so the canvas + overlays all go fullscreen together.
+function toggleFullscreen() {
+  const el = document.getElementById('game-wrap');
+  if (!document.fullscreenElement) {
+    (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el);
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
+  }
+}
+function syncFullscreenBtn() {
+  const btn = document.getElementById('btn-fullscreen');
+  if (btn) btn.textContent = document.fullscreenElement ? '⛶ Exit Fullscreen' : '⛶ Fullscreen';
+}
+document.getElementById('btn-fullscreen').onclick = () => { sfx('buy'); toggleFullscreen(); };
+document.addEventListener('fullscreenchange', () => { syncFullscreenBtn(); updateUiScale(); });
 document.getElementById('btn-ach-back').onclick = () => setState('title');
 document.getElementById('btn-pause-settings').onclick = () => openSettings('paused');
 document.getElementById('btn-quit-round').onclick = quitRound;
@@ -3572,7 +3601,7 @@ function updateBody(dt, p) {
     const len = Math.max(1, Math.hypot(dx, dy));
     const windMult = 1 + 0.05 * game.elem.wind; // Wind meta-class: +move speed
     const concMult = p.stats.concentrator ? 1.25 : 1; // Concentratos: faster on the move
-    const spd = 210 * p.stats.speedMult * (p.tempSpd || 1) * windMult * concMult * quakeSlowMultAt(p);
+    const spd = 250 * p.stats.speedMult * (p.tempSpd || 1) * windMult * concMult * quakeSlowMultAt(p); // base move speed
     p.x += (dx / len) * spd * dt;
     p.y += (dy / len) * spd * dt;
     p.moveX = dx / len;
@@ -4015,13 +4044,35 @@ function drawGadgets() {
   for (const e of game.enemies) if (!e.dead && e.stunT > 0) ctx.fillText('💫', e.x, e.y - e.r - 6);
 }
 
+// Smoothly scroll the camera so the player (or the co-op midpoint) stays centred,
+// clamped so the viewport never shows outside the world.
+function updateCamera() {
+  const bodies = [game.player, game.coop ? game.p2 : null].filter(b => b && !b.downed);
+  let fx = W / 2, fy = H / 2;
+  if (bodies.length) {
+    fx = bodies.reduce((a, b) => a + b.x, 0) / bodies.length;
+    fy = bodies.reduce((a, b) => a + b.y, 0) / bodies.length;
+  } else if (game.player) { fx = game.player.x; fy = game.player.y; }
+  const tx = clamp(fx - VIEW_W / 2, 0, Math.max(0, W - VIEW_W));
+  const ty = clamp(fy - VIEW_H / 2, 0, Math.max(0, H - VIEW_H));
+  game.cam.x += (tx - game.cam.x) * 0.2;
+  game.cam.y += (ty - game.cam.y) * 0.2;
+  if (Math.abs(tx - game.cam.x) < 0.5) game.cam.x = tx;
+  if (Math.abs(ty - game.cam.y) < 0.5) game.cam.y = ty;
+}
+
 function render() {
   ctx.save();
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
   if (game.shake > 0) {
     ctx.translate(rand(-game.shake, game.shake) * 0.5, rand(-game.shake, game.shake) * 0.5);
   }
+
+  // follow-camera: scroll the viewport so the player (or co-op midpoint) stays centred,
+  // clamped to the world bounds. Everything below this is drawn in WORLD coordinates.
+  updateCamera();
+  ctx.translate(-Math.round(game.cam.x), -Math.round(game.cam.y));
 
   // themed atmospheric background (gradient, dust, runes, grid, walls)
   drawBackground();
@@ -4588,9 +4639,42 @@ function blendColor(hex1, hex2, t) {
   return `rgb(${r},${g},${b})`;
 }
 
+// Edge arrows pointing at enemies that are outside the viewport, so you always
+// know where threats are on the larger map. Bosses/elites read bigger & brighter.
+function drawOffscreenEnemyArrows() {
+  const cam = game.cam, cx = VIEW_W / 2, cy = VIEW_H / 2;
+  const margin = 22, halfW = cx - margin, halfH = cy - margin;
+  for (const e of game.enemies) {
+    if (e.dead) continue;
+    const sx = e.x - cam.x, sy = e.y - cam.y;
+    if (sx >= -12 && sx <= VIEW_W + 12 && sy >= -12 && sy <= VIEW_H + 12) continue; // visible
+    const dx = sx - cx, dy = sy - cy;
+    if (!dx && !dy) continue;
+    const scale = Math.min(halfW / Math.max(1, Math.abs(dx)), halfH / Math.max(1, Math.abs(dy)));
+    const ax = cx + dx * scale, ay = cy + dy * scale;
+    const a = Math.atan2(dy, dx);
+    const size = e.boss ? 13 : e.elite ? 11 : 8;
+    const col = e.boss ? '#aa66ff' : e.elite ? '#ff5577' : '#ff8a8a';
+    ctx.save();
+    ctx.translate(ax, ay); ctx.rotate(a);
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = col; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(size, 0); ctx.lineTo(-size * 0.7, size * 0.7); ctx.lineTo(-size * 0.7, -size * 0.7);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawHUD() {
   const p = game.player;
   const s = p.stats;
+  // The HUD is screen-space: shadow W/H with the viewport size so every HUD
+  // coordinate below lands on-screen regardless of the larger world size.
+  const W = VIEW_W, H = VIEW_H;
+
+  drawOffscreenEnemyArrows();
 
   // HP bar
   const bw = 240, bh = 22, bx = 36, by = 34;
