@@ -19,13 +19,14 @@ const MUSIC_PATTERN = [
   { root: 110.00, fifth: 164.81, top: 293.66 }, // Am11-ish
 ];
 
-function ensureAudio() {
+function ensureAudio(startMusic = true) {
   if (muted) return false;
   if (!audioCtx) {
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
     catch (e) { muted = true; return false; }
   }
   if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  if (startMusic && typeof game !== 'undefined' && musicLevel() > 0) setTimeout(updateSoundtrack, 0);
   return true;
 }
 
@@ -34,7 +35,7 @@ function audioVolume() {
 }
 
 function makeMusic() {
-  if (!ensureAudio()) return null;
+  if (!ensureAudio(false)) return null;
   const master = audioCtx.createGain();
   const pad = audioCtx.createGain();
   const sparkle = audioCtx.createGain();
@@ -55,8 +56,8 @@ function musicLevel() {
   if (muted || typeof game === 'undefined' || !game.opt || game.opt.volume === 0) return 0;
   const base = audioVolume();
   // Keep the soundtrack under spell SFX; it should feel present, not busy.
-  if (game.state === 'playing') return 0.42 * base;
-  if (['paused', 'levelup', 'mastery', 'shop', 'settings'].includes(game.state)) return 0.16 * base;
+  if (game.state === 'playing') return 0.9 * base;
+  if (['paused', 'levelup', 'mastery', 'shop', 'settings'].includes(game.state)) return 0.32 * base;
   return 0;
 }
 
@@ -107,15 +108,15 @@ function scheduleMusicStep() {
   const chord = MUSIC_PATTERN[Math.floor(barStep / 8) % MUSIC_PATTERN.length];
   const t = music.next;
   if (barStep % 8 === 0) {
-    scheduleMusicTone(chord.root, t, 4.4, 'sine', 0.020, music.pad, -0.22, 1.004);
-    scheduleMusicTone(chord.fifth, t + 0.08, 4.2, 'triangle', 0.013, music.pad, 0.18, 0.997);
-    scheduleMusicTone(chord.top, t + 0.18, 3.8, 'sine', 0.008, music.pad, 0.38, 1.002);
+    scheduleMusicTone(chord.root, t, 4.4, 'sine', 0.055, music.pad, -0.22, 1.004);
+    scheduleMusicTone(chord.fifth, t + 0.08, 4.2, 'triangle', 0.034, music.pad, 0.18, 0.997);
+    scheduleMusicTone(chord.top, t + 0.18, 3.8, 'sine', 0.022, music.pad, 0.38, 1.002);
   }
   if ([2, 5].includes(barStep % 8)) {
     const note = [chord.top, chord.fifth * 2, chord.root * 3, chord.top * 1.5][Math.floor(Math.random() * 4)];
-    scheduleMusicTone(note, t + 0.03, 1.25, 'sine', 0.006, music.sparkle, Math.random() * 1.4 - 0.7, 1.015);
+    scheduleMusicTone(note, t + 0.03, 1.25, 'sine', 0.018, music.sparkle, Math.random() * 1.4 - 0.7, 1.015);
   }
-  if (barStep % 4 === 3) scheduleMusicNoise(t + 0.12, 1.1, 0.0045, Math.random() * 1.2 - 0.6);
+  if (barStep % 4 === 3) scheduleMusicNoise(t + 0.12, 1.1, 0.014, Math.random() * 1.2 - 0.6);
   music.next += MUSIC_STEP;
   music.step++;
 }
@@ -131,6 +132,7 @@ function updateSoundtrack() {
   if (target > 0 && !music.running) {
     music.running = true;
     music.next = Math.max(music.next || t, t + 0.04);
+    while (music.next < audioCtx.currentTime + MUSIC_LOOKAHEAD) scheduleMusicStep();
     music.timer = setInterval(() => {
       if (!music || !audioCtx) return;
       while (music.next < audioCtx.currentTime + MUSIC_LOOKAHEAD) scheduleMusicStep();
