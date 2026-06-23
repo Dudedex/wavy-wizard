@@ -43,8 +43,8 @@ function makeMusic() {
   lowpass.type = 'lowpass';
   lowpass.frequency.value = 1850;
   lowpass.Q.value = 0.7;
-  pad.gain.value = 0.0;
-  sparkle.gain.value = 0.0;
+  pad.gain.value = 1;
+  sparkle.gain.value = 1;
   pad.connect(lowpass).connect(master);
   sparkle.connect(master);
   master.gain.value = 0;
