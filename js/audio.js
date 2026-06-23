@@ -12,7 +12,8 @@ const SPELL_SFX_GAIN = 0.68;
 let music = null;
 const MUSIC_LOOKAHEAD = 0.18;
 const MUSIC_MENU_STEP = 0.5;
-const MUSIC_GAME_STEP = 0.34;
+const MUSIC_GAME_START_STEP = 0.46;
+const MUSIC_GAME_END_STEP = 0.26;
 const MUSIC_PATTERN = [
   { root: 146.83, fifth: 220.00, top: 369.99 }, // Dm9-ish
   { root: 130.81, fifth: 196.00, top: 329.63 }, // Cmaj7-ish
@@ -71,8 +72,16 @@ function musicLevel() {
   return 0;
 }
 
+function roundProgress() {
+  if (typeof game === 'undefined' || game.state !== 'playing') return 0;
+  const dur = Number.isFinite(game.waveDur) ? game.waveDur : 60;
+  return Math.max(0, Math.min(1, (game.waveTime || 0) / Math.max(1, dur)));
+}
+
 function currentMusicStep() {
-  return typeof game !== 'undefined' && game.state === 'playing' ? MUSIC_GAME_STEP : MUSIC_MENU_STEP;
+  if (typeof game === 'undefined' || game.state !== 'playing') return MUSIC_MENU_STEP;
+  const rush = roundProgress();
+  return MUSIC_GAME_START_STEP + (MUSIC_GAME_END_STEP - MUSIC_GAME_START_STEP) * rush;
 }
 
 function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1) {
@@ -127,15 +136,16 @@ function scheduleMusicStep() {
     scheduleMusicTone(chord.top, t + 0.18, game.state === 'playing' ? 2.5 : 3.8, 'sine', 0.022, music.pad, 0.38, 1.002);
   }
   if ([2, 5].includes(barStep % 8)) {
-    const note = [chord.top, chord.fifth * 2, chord.root * 3, chord.top * 1.5][Math.floor(Math.random() * 4)];
-    scheduleMusicTone(note, t + 0.03, 1.25, 'sine', 0.018, music.sparkle, Math.random() * 1.4 - 0.7, 1.015);
+    const note = [chord.root, chord.fifth, chord.top, chord.root * 2][Math.floor(Math.random() * 4)];
+    scheduleMusicTone(note, t + 0.03, 1.15, 'sine', 0.014, music.sparkle, Math.random() * 1.2 - 0.6, 1.01);
   }
   if (barStep % 4 === 3) scheduleMusicNoise(t + 0.12, 1.1, 0.014, Math.random() * 1.2 - 0.6);
   if (typeof game !== 'undefined' && game.state === 'playing' && [1, 3, 6].includes(barStep % 8)) {
-    const starNotes = [chord.top * 2, chord.fifth * 3, chord.root * 4, chord.top * 3];
-    const star = starNotes[Math.floor(Math.random() * starNotes.length)];
-    scheduleMusicTone(star, t + 0.02, 0.72, 'sine', 0.012, music.sparkle, Math.random() * 1.6 - 0.8, 1.025);
-    scheduleMusicTone(star * 1.505, t + 0.16, 0.52, 'triangle', 0.006, music.sparkle, Math.random() * 1.6 - 0.8, 0.985);
+    const driftNotes = [chord.root * 1.5, chord.fifth * 1.5, chord.top, chord.root * 2];
+    const drift = driftNotes[Math.floor(Math.random() * driftNotes.length)];
+    const urgency = roundProgress();
+    scheduleMusicTone(drift, t + 0.02, 0.64 - urgency * 0.18, 'sine', 0.010 + urgency * 0.004, music.sparkle, Math.random() * 1.4 - 0.7, 1.012);
+    if (urgency > 0.55) scheduleMusicTone(drift * 0.75, t + 0.16, 0.42, 'triangle', 0.005, music.sparkle, Math.random() * 1.2 - 0.6, 0.99);
   }
   music.next += currentMusicStep();
   music.step++;
