@@ -9,14 +9,145 @@ let muted = false;
 const sfxLast = {};
 const SPELL_SFX_GAIN = 0.68;
 
+let music = null;
+const MUSIC_LOOKAHEAD = 0.18;
+const MUSIC_STEP = 0.5;
+const MUSIC_PATTERN = [
+  { root: 146.83, fifth: 220.00, top: 369.99 }, // Dm9-ish
+  { root: 130.81, fifth: 196.00, top: 329.63 }, // Cmaj7-ish
+  { root: 174.61, fifth: 261.63, top: 440.00 }, // Fmaj9-ish
+  { root: 110.00, fifth: 164.81, top: 293.66 }, // Am11-ish
+];
+
+function ensureAudio() {
+  if (muted) return false;
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch (e) { muted = true; return false; }
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  return true;
+}
+
+function audioVolume() {
+  return game.opt && game.opt.volume !== undefined ? game.opt.volume : 1;
+}
+
+function makeMusic() {
+  if (!ensureAudio()) return null;
+  const master = audioCtx.createGain();
+  const pad = audioCtx.createGain();
+  const sparkle = audioCtx.createGain();
+  const lowpass = audioCtx.createBiquadFilter();
+  lowpass.type = 'lowpass';
+  lowpass.frequency.value = 1850;
+  lowpass.Q.value = 0.7;
+  pad.gain.value = 0.0;
+  sparkle.gain.value = 0.0;
+  pad.connect(lowpass).connect(master);
+  sparkle.connect(master);
+  master.gain.value = 0;
+  master.connect(audioCtx.destination);
+  return { master, pad, sparkle, timer: null, next: audioCtx.currentTime, step: 0, running: false };
+}
+
+function musicLevel() {
+  if (muted || typeof game === 'undefined' || !game.opt || game.opt.volume === 0) return 0;
+  const base = audioVolume();
+  // Keep the soundtrack under spell SFX; it should feel present, not busy.
+  if (game.state === 'playing') return 0.42 * base;
+  if (['paused', 'levelup', 'mastery', 'shop', 'settings'].includes(game.state)) return 0.16 * base;
+  return 0;
+}
+
+function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1) {
+  if (!music || !audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, start);
+  if (bend !== 1) osc.frequency.exponentialRampToValueAtTime(Math.max(20, freq * bend), start + dur);
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.linearRampToValueAtTime(vol, start + 0.25);
+  g.gain.setValueAtTime(vol, start + Math.max(0.26, dur - 0.7));
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  let out = g;
+  if (audioCtx.createStereoPanner) {
+    const p = audioCtx.createStereoPanner();
+    p.pan.value = pan;
+    g.connect(p); out = p;
+  }
+  osc.connect(g);
+  out.connect(dest);
+  osc.start(start);
+  osc.stop(start + dur + 0.05);
+}
+
+function scheduleMusicNoise(start, dur, vol, pan = 0) {
+  if (!music || !audioCtx) return;
+  const n = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+  const src = audioCtx.createBufferSource(); src.buffer = buf;
+  const filt = audioCtx.createBiquadFilter(); filt.type = 'bandpass'; filt.frequency.value = 2500 + Math.random() * 1800; filt.Q.value = 8;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.linearRampToValueAtTime(vol, start + 0.05);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  let out = g;
+  if (audioCtx.createStereoPanner) { const p = audioCtx.createStereoPanner(); p.pan.value = pan; g.connect(p); out = p; }
+  src.connect(filt).connect(g); out.connect(music.sparkle);
+  src.start(start); src.stop(start + dur + 0.05);
+}
+
+function scheduleMusicStep() {
+  if (!music || muted || audioVolume() <= 0) return;
+  const barStep = music.step % 32;
+  const chord = MUSIC_PATTERN[Math.floor(barStep / 8) % MUSIC_PATTERN.length];
+  const t = music.next;
+  if (barStep % 8 === 0) {
+    scheduleMusicTone(chord.root, t, 4.4, 'sine', 0.020, music.pad, -0.22, 1.004);
+    scheduleMusicTone(chord.fifth, t + 0.08, 4.2, 'triangle', 0.013, music.pad, 0.18, 0.997);
+    scheduleMusicTone(chord.top, t + 0.18, 3.8, 'sine', 0.008, music.pad, 0.38, 1.002);
+  }
+  if ([2, 5].includes(barStep % 8)) {
+    const note = [chord.top, chord.fifth * 2, chord.root * 3, chord.top * 1.5][Math.floor(Math.random() * 4)];
+    scheduleMusicTone(note, t + 0.03, 1.25, 'sine', 0.006, music.sparkle, Math.random() * 1.4 - 0.7, 1.015);
+  }
+  if (barStep % 4 === 3) scheduleMusicNoise(t + 0.12, 1.1, 0.0045, Math.random() * 1.2 - 0.6);
+  music.next += MUSIC_STEP;
+  music.step++;
+}
+
+function updateSoundtrack() {
+  const target = musicLevel();
+  if (target <= 0 && !music) return;
+  if (!music) music = makeMusic();
+  if (!music || !audioCtx) return;
+  const t = audioCtx.currentTime;
+  music.master.gain.cancelScheduledValues(t);
+  music.master.gain.setTargetAtTime(target, t, target > 0 ? 0.8 : 0.25);
+  if (target > 0 && !music.running) {
+    music.running = true;
+    music.next = Math.max(music.next || t, t + 0.04);
+    music.timer = setInterval(() => {
+      if (!music || !audioCtx) return;
+      while (music.next < audioCtx.currentTime + MUSIC_LOOKAHEAD) scheduleMusicStep();
+    }, 80);
+  } else if (target <= 0 && music.running) {
+    music.running = false;
+    clearInterval(music.timer);
+    music.timer = null;
+    music.next = t + 0.2;
+  }
+}
+
 function blip(f0, f1, dur, type, vol, delay = 0, gain = 1) {
   const v = vol * gain * (game.opt && game.opt.volume !== undefined ? game.opt.volume : 1);
   if (muted || v <= 0) return;
   vol = v;
-  if (!audioCtx) {
-    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-    catch (e) { muted = true; return; }
-  }
+  if (!ensureAudio()) return;
   const t = audioCtx.currentTime + delay;
   const o = audioCtx.createOscillator();
   const g = audioCtx.createGain();
@@ -34,10 +165,7 @@ function blip(f0, f1, dur, type, vol, delay = 0, gain = 1) {
 function noise(dur, filterType, f0, f1, vol, delay = 0, gain = 1) {
   const v = vol * gain * (game.opt && game.opt.volume !== undefined ? game.opt.volume : 1);
   if (muted || v <= 0) return;
-  if (!audioCtx) {
-    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-    catch (e) { muted = true; return; }
-  }
+  if (!ensureAudio()) return;
   const t = audioCtx.currentTime + delay;
   const n = Math.floor(audioCtx.sampleRate * dur);
   const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);

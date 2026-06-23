@@ -90,7 +90,7 @@ window.addEventListener('keydown', e => {
     return;
   }
   keys[e.code] = true;
-  if (e.code === 'KeyM') { muted = !muted; game.opt.muted = muted; saveOpts(); addText(game.player.x, game.player.y - 40, muted ? 'MUTED' : 'SOUND ON', '#9fb0c8', 14); }
+  if (e.code === 'KeyM') { muted = !muted; game.opt.muted = muted; saveOpts(); updateSoundtrack(); addText(game.player.x, game.player.y - 40, muted ? 'MUTED' : 'SOUND ON', '#9fb0c8', 14); }
   if (e.code === 'Tab') { game.showMeter = !game.showMeter; e.preventDefault(); }
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
@@ -2507,10 +2507,10 @@ function renderSettings() {
   row('Volume', vol <= 0 ? 'Off' : Math.round(vol * 100) + '%', vol > 0, () => {
     let idx = VOLUME_STEPS.indexOf(vol); if (idx === -1) idx = VOLUME_STEPS.length - 1;
     game.opt.volume = VOLUME_STEPS[(idx + 1) % VOLUME_STEPS.length];
-    saveOpts(); sfx('buy'); renderSettings();
+    saveOpts(); updateSoundtrack(); sfx('buy'); renderSettings();
   });
   row('Mute all (M)', muted ? 'MUTED' : 'ON', !muted, () => {
-    muted = !muted; game.opt.muted = muted; saveOpts(); renderSettings();
+    muted = !muted; game.opt.muted = muted; saveOpts(); updateSoundtrack(); renderSettings();
   });
 
   // --- Colour scheme ---
@@ -2541,6 +2541,7 @@ function setState(s) {
   }
   if (s === 'title') renderTitleScoreboard();
   updateTouchControls();
+  updateSoundtrack();
 }
 
 function togglePause() {
