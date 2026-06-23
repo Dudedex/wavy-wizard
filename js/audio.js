@@ -14,6 +14,7 @@ const MUSIC_LOOKAHEAD = 0.18;
 const MUSIC_MENU_STEP = 0.5;
 const MUSIC_GAME_START_STEP = 0.44;
 const MUSIC_GAME_END_STEP = 0.18;
+const MUSIC_HEARTBEAT_END_STEP = 0.12;
 const MUSIC_PATTERN = [
   { root: 146.83, fifth: 220.00, top: 369.99 }, // Dm9-ish
   { root: 130.81, fifth: 196.00, top: 329.63 }, // Cmaj7-ish
@@ -60,7 +61,7 @@ function makeMusic() {
   spaceDelay.connect(spaceWet).connect(master);
   master.gain.value = 0;
   master.connect(audioCtx.destination);
-  return { master, pad, sparkle, spaceWet, timer: null, next: audioCtx.currentTime, step: 0, running: false };
+  return { master, pad, sparkle, spaceWet, timer: null, next: audioCtx.currentTime, nextHeartbeat: 0, step: 0, running: false };
 }
 
 function musicLevel() {
@@ -78,12 +79,23 @@ function roundProgress() {
   return Math.max(0, Math.min(1, (game.waveTime || 0) / Math.max(1, dur)));
 }
 
+function roundRemaining() {
+  if (typeof game === 'undefined' || game.state !== 'playing' || !Number.isFinite(game.waveDur)) return Infinity;
+  return Math.max(0, game.waveDur - (game.waveTime || 0));
+}
+
+function finalHeartbeat() {
+  const left = roundRemaining();
+  return left <= 10 ? 1 - left / 10 : 0;
+}
+
 function currentMusicStep() {
   if (typeof game === 'undefined' || game.state !== 'playing') return MUSIC_MENU_STEP;
   // Ease out so combat tempo ramps noticeably earlier instead of saving the
   // speed-up for only the final seconds.
   const rush = Math.sqrt(roundProgress());
-  return MUSIC_GAME_START_STEP + (MUSIC_GAME_END_STEP - MUSIC_GAME_START_STEP) * rush;
+  const combatStep = MUSIC_GAME_START_STEP + (MUSIC_GAME_END_STEP - MUSIC_GAME_START_STEP) * rush;
+  return combatStep + (MUSIC_HEARTBEAT_END_STEP - combatStep) * finalHeartbeat();
 }
 
 function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1) {
@@ -143,6 +155,18 @@ function scheduleCombatNoise(start, dur, vol) {
   src.start(start); src.stop(start + dur + 0.03);
 }
 
+
+function scheduleHeartbeatPhrase(start, root, gain) {
+  if (!music || !audioCtx || gain <= 0) return;
+  // Low "dö-dö-dömm-döm, dö dö dömm" phrase for the final-ten countdown.
+  const hits = [
+    [0.00, root, 0.10, 0.036], [0.12, root, 0.10, 0.030], [0.24, root * 0.75, 0.18, 0.050],
+    [0.42, root * 0.9, 0.13, 0.038], [0.68, root, 0.10, 0.030], [0.86, root, 0.10, 0.028],
+    [1.04, root * 0.75, 0.22, 0.052],
+  ];
+  for (const [delay, freq, dur, vol] of hits) scheduleMusicTone(freq, start + delay, dur, 'triangle', vol * gain, music.pad, 0, 0.68);
+}
+
 function scheduleMusicStep() {
   if (!music || muted || audioVolume() <= 0) return;
   const barStep = music.step % 32;
@@ -156,10 +180,15 @@ function scheduleMusicStep() {
   const inCombat = typeof game !== 'undefined' && game.state === 'playing';
   const urgency = inCombat ? roundProgress() : 0;
   if (inCombat) {
+    const heartbeat = finalHeartbeat();
     const pulse = chord.root * 0.5;
     scheduleMusicTone(pulse, t, 0.20, 'triangle', 0.030 + urgency * 0.016, music.pad, -0.05, 0.72);
     if (barStep % 2 === 1) scheduleCombatNoise(t + 0.04, 0.16, 0.018 + urgency * 0.010);
     if (urgency > 0.65 && barStep % 2 === 0) scheduleMusicTone(chord.root, t + currentMusicStep() * 0.48, 0.12, 'triangle', 0.012, music.pad, 0.08, 0.86);
+    if (heartbeat > 0 && t >= (music.nextHeartbeat || 0)) {
+      scheduleHeartbeatPhrase(t, pulse, 0.55 + heartbeat * 0.9);
+      music.nextHeartbeat = t + 1.25 - heartbeat * 0.55;
+    }
   }
   if ([2, 5].includes(barStep % 8)) {
     const note = [chord.root, chord.fifth, chord.top, chord.root * 2][Math.floor(Math.random() * 4)];
