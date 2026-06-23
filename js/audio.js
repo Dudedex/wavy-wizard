@@ -125,6 +125,22 @@ function scheduleMusicNoise(start, dur, vol, pan = 0) {
   src.start(start); src.stop(start + dur + 0.05);
 }
 
+
+function scheduleCombatNoise(start, dur, vol) {
+  if (!music || !audioCtx) return;
+  const n = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2);
+  const src = audioCtx.createBufferSource(); src.buffer = buf;
+  const filt = audioCtx.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 520; filt.Q.value = 0.8;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(vol, start);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  src.connect(filt).connect(g).connect(music.pad);
+  src.start(start); src.stop(start + dur + 0.03);
+}
+
 function scheduleMusicStep() {
   if (!music || muted || audioVolume() <= 0) return;
   const barStep = music.step % 32;
@@ -135,17 +151,24 @@ function scheduleMusicStep() {
     scheduleMusicTone(chord.fifth, t + 0.08, game.state === 'playing' ? 2.8 : 4.2, 'triangle', 0.034, music.pad, 0.18, 0.997);
     scheduleMusicTone(chord.top, t + 0.18, game.state === 'playing' ? 2.5 : 3.8, 'sine', 0.022, music.pad, 0.38, 1.002);
   }
+  const inCombat = typeof game !== 'undefined' && game.state === 'playing';
+  const urgency = inCombat ? roundProgress() : 0;
+  if (inCombat) {
+    const pulse = chord.root * 0.5;
+    scheduleMusicTone(pulse, t, 0.20, 'triangle', 0.030 + urgency * 0.016, music.pad, -0.05, 0.72);
+    if (barStep % 2 === 1) scheduleCombatNoise(t + 0.04, 0.16, 0.018 + urgency * 0.010);
+    if (urgency > 0.65 && barStep % 2 === 0) scheduleMusicTone(chord.root, t + currentMusicStep() * 0.48, 0.12, 'triangle', 0.012, music.pad, 0.08, 0.86);
+  }
   if ([2, 5].includes(barStep % 8)) {
     const note = [chord.root, chord.fifth, chord.top, chord.root * 2][Math.floor(Math.random() * 4)];
-    scheduleMusicTone(note, t + 0.03, 1.15, 'sine', 0.014, music.sparkle, Math.random() * 1.2 - 0.6, 1.01);
+    scheduleMusicTone(note, t + 0.03, inCombat ? 0.8 : 1.15, 'sine', inCombat ? 0.010 : 0.014, music.sparkle, Math.random() * 1.2 - 0.6, 1.01);
   }
-  if (barStep % 4 === 3) scheduleMusicNoise(t + 0.12, 1.1, 0.014, Math.random() * 1.2 - 0.6);
-  if (typeof game !== 'undefined' && game.state === 'playing' && [1, 3, 6].includes(barStep % 8)) {
+  if (!inCombat && barStep % 4 === 3) scheduleMusicNoise(t + 0.12, 1.1, 0.014, Math.random() * 1.2 - 0.6);
+  if (inCombat && [1, 3, 6].includes(barStep % 8)) {
     const driftNotes = [chord.root * 1.5, chord.fifth * 1.5, chord.top, chord.root * 2];
     const drift = driftNotes[Math.floor(Math.random() * driftNotes.length)];
-    const urgency = roundProgress();
-    scheduleMusicTone(drift, t + 0.02, 0.64 - urgency * 0.18, 'sine', 0.010 + urgency * 0.004, music.sparkle, Math.random() * 1.4 - 0.7, 1.012);
-    if (urgency > 0.55) scheduleMusicTone(drift * 0.75, t + 0.16, 0.42, 'triangle', 0.005, music.sparkle, Math.random() * 1.2 - 0.6, 0.99);
+    scheduleMusicTone(drift, t + 0.02, 0.50 - urgency * 0.12, 'sine', 0.008 + urgency * 0.003, music.sparkle, Math.random() * 1.4 - 0.7, 1.012);
+    if (urgency > 0.55) scheduleMusicTone(drift * 0.75, t + 0.16, 0.32, 'triangle', 0.005, music.sparkle, Math.random() * 1.2 - 0.6, 0.99);
   }
   music.next += currentMusicStep();
   music.step++;
