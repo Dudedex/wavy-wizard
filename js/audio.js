@@ -461,67 +461,86 @@ function spellSfx(id) {
   sfxLast[key] = now;
   return withAudioCategory('spell', () => {
   switch (id) {
-    case 'missile': // compressed air snap with a quick crystalline tail
-      debrisBurst(0.07, 2400, 5200, 0.010, 0, SPELL_SFX_GAIN);
-      arpeggio([1180, 1560, 1980], 'triangle', 0.010, 0.042, 0.024, SPELL_SFX_GAIN);
-      blip(2100, 860, 0.09, 'triangle', 0.010, 0.045, SPELL_SFX_GAIN);
+    case 'missile': // arcane rail-dart: pressure snap, rune ticks, and doppler tail
+      debrisBurst(0.06, 2600, 6200, 0.012, 0, SPELL_SFX_GAIN);
+      arpeggio([980, 1470, 1960, 2940], 'triangle', 0.009, 0.036, 0.020, SPELL_SFX_GAIN);
+      blip(2600, 720, 0.12, 'sine', 0.012, 0.055, SPELL_SFX_GAIN);
       break;
-    case 'fireball': // gas ignition pop, turbulent flame, and ember spit
-      impactThump(115, 0, SPELL_SFX_GAIN);
-      noise(0.38, 'lowpass', 1900, 240, 0.038, 0.018, SPELL_SFX_GAIN);
-      debrisBurst(0.12, 1700, 3600, 0.010, 0.08, SPELL_SFX_GAIN);
-      blip(360, 620, 0.12, 'triangle', 0.010, 0.035, SPELL_SFX_GAIN);
+    case 'fireball': // palm ignition, pressure bloom, ember spit, and rolling flame body
+      impactThump(118, 0, SPELL_SFX_GAIN);
+      blip(520, 1180, 0.08, 'sawtooth', 0.011, 0.018, SPELL_SFX_GAIN);
+      noise(0.42, 'lowpass', 2200, 230, 0.040, 0.025, SPELL_SFX_GAIN);
+      debrisBurst(0.16, 1600, 4200, 0.012, 0.075, SPELL_SFX_GAIN);
       break;
-    case 'frost': // brittle ice fracture over a cold air hiss
-      chord([1450, 2180, 0.14, 'sine', 0.012], [2300, 3150, 0.12, 'triangle', 0.010, 0.03], [760, 1080, 0.16, 'sine', 0.008, 0.055], SPELL_SFX_GAIN);
-      debrisBurst(0.18, 3600, 6200, 0.012, 0.02, SPELL_SFX_GAIN);
+    case 'frost': // flash-freeze: cold inhale, crystal fork, and brittle spray
+      noise(0.20, 'highpass', 5200, 2800, 0.012, 0, SPELL_SFX_GAIN);
+      chord([1320, 2110, 0.15, 'sine', 0.012, 0.015], [1980, 3020, 0.12, 'triangle', 0.010, 0.045], [660, 990, 0.19, 'sine', 0.007, 0.075], SPELL_SFX_GAIN);
+      debrisBurst(0.16, 4200, 6800, 0.012, 0.07, SPELL_SFX_GAIN);
       break;
-    case 'lightning': // sharp arc crack, buzz, and tiny thunder body
-      arpeggio([2600, 760, 2100, 540], 'square', 0.012, 0.032, 0.016, SPELL_SFX_GAIN);
-      debrisBurst(0.10, 4200, 1200, 0.018, 0, SPELL_SFX_GAIN);
-      impactThump(150, 0.045, SPELL_SFX_GAIN);
+    case 'lightning': // forked arc: transformer buzz, crack, and delayed thunderlet
+      noise(0.055, 'bandpass', 5600, 900, 0.024, 0, SPELL_SFX_GAIN);
+      arpeggio([3100, 740, 2480, 580, 1900], 'square', 0.011, 0.026, 0.012, SPELL_SFX_GAIN);
+      noise(0.14, 'bandpass', 1200, 2600, 0.010, 0.035, SPELL_SFX_GAIN);
+      impactThump(155, 0.055, SPELL_SFX_GAIN);
       break;
-    case 'shield': // stable arcane shield lock-in, no wobble/pulse
-      chord([360, 720, 0.26, 'sine', 0.022], [540, 1080, 0.24, 'sine', 0.016], [900, 900, 0.20, 'triangle', 0.011, 0.04], SPELL_SFX_GAIN);
+    case 'shield': // ward plates unfolding into a resonant glass dome
+      impactThump(210, 0, SPELL_SFX_GAIN);
+      chord([330, 660, 0.30, 'sine', 0.018, 0.015], [495, 990, 0.32, 'triangle', 0.014, 0.045], [1320, 1320, 0.18, 'sine', 0.009, 0.09], SPELL_SFX_GAIN);
+      debrisBurst(0.10, 1800, 4200, 0.007, 0.06, SPELL_SFX_GAIN);
       break;
-    case 'poison': // wet toxic bubbles and a soft gas hiss
-      blip(150, 82, 0.20, 'sine', 0.018, 0, SPELL_SFX_GAIN);
-      blip(115, 170, 0.14, 'triangle', 0.012, 0.07, SPELL_SFX_GAIN);
-      blip(190, 105, 0.18, 'sine', 0.014, 0.13, SPELL_SFX_GAIN);
-      noise(0.34, 'lowpass', 620, 180, 0.018, 0.02, SPELL_SFX_GAIN);
+    case 'poison': // caustic flask slosh, wet bubbles, and pressurized gas leak
+      noise(0.24, 'lowpass', 520, 160, 0.018, 0, SPELL_SFX_GAIN);
+      blip(130, 78, 0.18, 'sine', 0.017, 0.015, SPELL_SFX_GAIN);
+      blip(95, 155, 0.11, 'triangle', 0.011, 0.09, SPELL_SFX_GAIN);
+      blip(180, 105, 0.15, 'sine', 0.012, 0.17, SPELL_SFX_GAIN);
+      noise(0.40, 'bandpass', 900, 260, 0.014, 0.05, SPELL_SFX_GAIN);
       break;
-    case 'meteor': // doppler whistle, wind shear, then rock impact
-      blip(1280, 210, 0.48, 'sine', 0.014, 0, SPELL_SFX_GAIN);
-      noise(0.48, 'lowpass', 980, 110, 0.030, 0.06, SPELL_SFX_GAIN);
-      impactThump(170, 0.22, SPELL_SFX_GAIN);
-      debrisBurst(0.18, 520, 1800, 0.018, 0.25, SPELL_SFX_GAIN);
+    case 'meteor': // sky tear, accelerating stone, ground punch, and rubble scatter
+      blip(1500, 190, 0.52, 'sine', 0.014, 0, SPELL_SFX_GAIN);
+      noise(0.54, 'lowpass', 1200, 95, 0.032, 0.04, SPELL_SFX_GAIN);
+      impactThump(185, 0.24, SPELL_SFX_GAIN);
+      blip(72, 38, 0.28, 'sawtooth', 0.020, 0.26, SPELL_SFX_GAIN);
+      debrisBurst(0.22, 480, 2200, 0.020, 0.27, SPELL_SFX_GAIN);
       break;
-    case 'drain': // red droplets siphoning downward along the tether
-      arpeggio([760, 620, 480, 340], 'triangle', 0.014, 0.08, 0.055, SPELL_SFX_GAIN);
-      blip(180, 120, 0.30, 'triangle', 0.016, 0.08, SPELL_SFX_GAIN);
+    case 'drain': // heartbeat siphon with reversed-feeling droplets and a vein hum
+      blip(240, 160, 0.18, 'triangle', 0.014, 0, SPELL_SFX_GAIN);
+      arpeggio([820, 690, 540, 390, 260], 'sine', 0.011, 0.070, 0.045, SPELL_SFX_GAIN);
+      noise(0.30, 'bandpass', 740, 180, 0.010, 0.06, SPELL_SFX_GAIN);
+      blip(150, 92, 0.32, 'sawtooth', 0.012, 0.10, SPELL_SFX_GAIN);
       break;
-    case 'orbs': // symmetric purple orbit chimes
-      chord([660, 990, 0.20, 'sine', 0.014], [990, 1320, 0.20, 'sine', 0.012, 0.045], [1320, 990, 0.20, 'sine', 0.01, 0.09], SPELL_SFX_GAIN);
+    case 'orbs': // orbital motor spin-up with alternating satellite glints
+      blip(260, 520, 0.22, 'triangle', 0.011, 0, SPELL_SFX_GAIN);
+      arpeggio([660, 990, 1320, 990, 1480, 1110], 'sine', 0.009, 0.055, 0.030, SPELL_SFX_GAIN);
+      noise(0.16, 'bandpass', 1400, 2400, 0.006, 0.07, SPELL_SFX_GAIN);
       break;
-    case 'nova': // round holy wave expanding outward
-      chord([392, 784, 0.38, 'sine', 0.025], [523, 1046, 0.36, 'triangle', 0.018, 0.035], [659, 1318, 0.34, 'sine', 0.014, 0.07], SPELL_SFX_GAIN);
-      noise(0.24, 'highpass', 1800, 3300, 0.011, 0.08, SPELL_SFX_GAIN);
+    case 'nova': // choir-like inhale into a radiant pressure ring
+      noise(0.18, 'highpass', 1200, 3000, 0.008, 0, SPELL_SFX_GAIN);
+      chord([392, 784, 0.42, 'sine', 0.022, 0.02], [523, 1046, 0.40, 'triangle', 0.017, 0.055], [659, 1318, 0.38, 'sine', 0.013, 0.095], SPELL_SFX_GAIN);
+      impactThump(260, 0.09, SPELL_SFX_GAIN);
+      debrisBurst(0.20, 2200, 4600, 0.008, 0.12, SPELL_SFX_GAIN);
       break;
-    case 'firebreath': // flame wave: swell, crest, and hot crash
+    case 'firebreath': // dragon exhale: chest rumble, pilot flame, then broad roar
+      blip(95, 55, 0.30, 'sawtooth', 0.020, 0, SPELL_SFX_GAIN);
+      blip(420, 980, 0.10, 'sawtooth', 0.010, 0.035, SPELL_SFX_GAIN);
       waveBreathSfx('fire', SPELL_SFX_GAIN);
-      blip(180, 95, 0.20, 'sawtooth', 0.014, 0.18, SPELL_SFX_GAIN);
+      debrisBurst(0.18, 1200, 3600, 0.011, 0.14, SPELL_SFX_GAIN);
       break;
-    case 'icebreath': // freezing wave: glassy swell with icy spray
+    case 'icebreath': // cryogenic vent: glass ping, powder hiss, and freezing wave
+      chord([1500, 2250, 0.16, 'sine', 0.009, 0], [2400, 3100, 0.13, 'sine', 0.007, 0.055], null, SPELL_SFX_GAIN);
       waveBreathSfx('ice', SPELL_SFX_GAIN);
-      chord([1400, 2100, 0.18, 'sine', 0.009, 0.07], [2100, 2800, 0.16, 'sine', 0.008, 0.16], null, SPELL_SFX_GAIN);
+      debrisBurst(0.18, 4800, 7200, 0.010, 0.15, SPELL_SFX_GAIN);
       break;
-    case 'earthbreath': // ground wave: rolling rumble and impact
+    case 'earthbreath': // gravel intake, sub-bass shove, and tumbling stones
+      noise(0.18, 'lowpass', 420, 90, 0.018, 0, SPELL_SFX_GAIN);
       waveBreathSfx('earth', SPELL_SFX_GAIN);
-      blip(90, 45, 0.34, 'sawtooth', 0.03, 0.16, SPELL_SFX_GAIN);
+      impactThump(88, 0.13, SPELL_SFX_GAIN);
+      debrisBurst(0.26, 240, 1100, 0.020, 0.16, SPELL_SFX_GAIN);
       break;
-    case 'windbreath': // air wave: rushing swell and trailing gust
+    case 'windbreath': // pressure inhale, slicing gust, and airy whistle tail
+      noise(0.18, 'bandpass', 520, 1800, 0.014, 0, SPELL_SFX_GAIN);
       waveBreathSfx('wind', SPELL_SFX_GAIN);
-      blip(620, 980, 0.22, 'sine', 0.009, 0.15, SPELL_SFX_GAIN);
+      blip(720, 1220, 0.24, 'sine', 0.008, 0.13, SPELL_SFX_GAIN);
+      noise(0.34, 'highpass', 2600, 5200, 0.010, 0.16, SPELL_SFX_GAIN);
       break;
     default:
       blip(700, 320, 0.08, 'triangle', 0.016, 0, SPELL_SFX_GAIN);
