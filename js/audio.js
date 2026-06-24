@@ -28,6 +28,12 @@ const FIGHTER_PATTERN = [
   { root: 87.31, fifth: 130.81, top: 261.63 },
   { root: 130.81, fifth: 196.00, top: 392.00 },
 ];
+const PIRATE_PATTERN = [
+  { root: 146.83, fifth: 220.00, top: 293.66 }, // Dm
+  { root: 130.81, fifth: 196.00, top: 261.63 }, // C
+  { root: 116.54, fifth: 174.61, top: 233.08 }, // Bb
+  { root: 110.00, fifth: 164.81, top: 220.00 }, // A
+];
 
 function ensureAudio(startMusic = true) {
   if (muted || pageAudioMuted) return false;
@@ -45,7 +51,10 @@ function audioVolume() {
 }
 
 function soundtrackMode() {
-  return game.opt && game.opt.soundtrack === 'fighter' ? 'fighter' : 'ambient';
+  if (typeof game === 'undefined' || !game.opt) return 'ambient';
+  if (game.opt.soundtrack === 'fighter') return 'fighter';
+  if (game.opt.soundtrack === 'pirate') return 'pirate';
+  return 'ambient';
 }
 
 function makeMusic() {
@@ -105,8 +114,9 @@ function currentMusicStep() {
   // Ease out so combat tempo ramps noticeably earlier instead of saving the
   // speed-up for only the final seconds.
   const rush = Math.sqrt(roundProgress());
-  const endStep = soundtrackMode() === 'fighter' ? 0.14 : MUSIC_GAME_END_STEP;
-  const startStep = soundtrackMode() === 'fighter' ? 0.32 : MUSIC_GAME_START_STEP;
+  const mode = soundtrackMode();
+  const endStep = mode === 'fighter' ? 0.14 : mode === 'pirate' ? 0.16 : MUSIC_GAME_END_STEP;
+  const startStep = mode === 'fighter' ? 0.32 : mode === 'pirate' ? 0.38 : MUSIC_GAME_START_STEP;
   const combatStep = startStep + (endStep - startStep) * rush;
   return combatStep + (MUSIC_HEARTBEAT_END_STEP - combatStep) * finalHeartbeat();
 }
@@ -205,8 +215,33 @@ function scheduleFighterStep() {
   music.step++;
 }
 
+
+function schedulePirateStep() {
+  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
+  const barStep = music.step % 24;
+  const chord = PIRATE_PATTERN[Math.floor(barStep / 6) % PIRATE_PATTERN.length];
+  const t = music.next;
+  const inCombat = typeof game !== 'undefined' && game.state === 'playing';
+  const urgency = inCombat ? roundProgress() : 0;
+  const step = currentMusicStep();
+  const beat = barStep % 6;
+  const drumGain = 0.020 + urgency * 0.014;
+  if ([0, 3].includes(beat)) scheduleMusicTone(chord.root * 0.5, t, 0.18, 'triangle', 0.036 + urgency * 0.016, music.pad, -0.12, 0.7);
+  if ([2, 5].includes(beat)) scheduleCombatNoise(t + 0.025, 0.12, drumGain);
+  const shanty = [chord.root, chord.fifth, chord.top, chord.fifth, chord.root * 1.5, chord.fifth][beat];
+  if (inCombat || [0, 3].includes(beat)) scheduleMusicTone(shanty, t + step * 0.28, 0.20, 'triangle', 0.014 + urgency * 0.004, music.sparkle, beat < 3 ? -0.28 : 0.28, 1.006);
+  if (barStep % 6 === 0) {
+    scheduleMusicTone(chord.root, t, step * 5.6, 'sawtooth', 0.012, music.pad, -0.25, 1.001);
+    scheduleMusicTone(chord.fifth, t + 0.06, step * 5.2, 'triangle', 0.010, music.pad, 0.22, 0.998);
+  }
+  if (inCombat && barStep % 12 === 0) scheduleHeartbeatPhrase(t + step * 0.15, chord.root * 0.5, 0.22 + finalHeartbeat() * 0.75);
+  music.next += step;
+  music.step++;
+}
+
 function scheduleMusicStep() {
   if (soundtrackMode() === 'fighter') { scheduleFighterStep(); return; }
+  if (soundtrackMode() === 'pirate') { schedulePirateStep(); return; }
   if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
   const barStep = music.step % 32;
   const chord = MUSIC_PATTERN[Math.floor(barStep / 8) % MUSIC_PATTERN.length];

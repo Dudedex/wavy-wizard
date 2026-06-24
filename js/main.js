@@ -2492,6 +2492,7 @@ const VOLUME_STEPS = [0, 0.25, 0.5, 1];
 const SOUNDTRACK_CHOICES = [
   { id: 'ambient', label: 'Ambient Wizard' },
   { id: 'fighter', label: 'Arcade Fighter' },
+  { id: 'pirate', label: 'High Seas Adventure' },
 ];
 
 function renderSettings() {
