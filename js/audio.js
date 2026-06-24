@@ -36,6 +36,12 @@ const PIRATE_PATTERN = [
   { root: 116.54, fifth: 174.61, top: 233.08 }, // Bb
   { root: 110.00, fifth: 164.81, top: 220.00 }, // A
 ];
+const TECHNO_PATTERN = [
+  { root: 110.00, fifth: 164.81, top: 440.00 }, // A minor pulse
+  { root: 130.81, fifth: 196.00, top: 523.25 }, // C lift
+  { root: 98.00, fifth: 146.83, top: 392.00 },  // G pressure
+  { root: 146.83, fifth: 220.00, top: 587.33 }, // Dm release
+];
 
 function ensureAudio(startMusic = true) {
   if (muted || pageAudioMuted) return false;
@@ -66,6 +72,7 @@ function soundtrackMode() {
   if (typeof game === 'undefined' || !game.opt) return 'ambient';
   if (game.opt.soundtrack === 'fighter') return 'fighter';
   if (game.opt.soundtrack === 'pirate') return 'pirate';
+  if (game.opt.soundtrack === 'techno') return 'techno';
   return 'ambient';
 }
 
@@ -127,8 +134,8 @@ function currentMusicStep() {
   // speed-up for only the final seconds.
   const rush = Math.sqrt(roundProgress());
   const mode = soundtrackMode();
-  const endStep = mode === 'fighter' ? 0.14 : mode === 'pirate' ? 0.16 : MUSIC_GAME_END_STEP;
-  const startStep = mode === 'fighter' ? 0.32 : mode === 'pirate' ? 0.38 : MUSIC_GAME_START_STEP;
+  const endStep = mode === 'fighter' ? 0.14 : mode === 'pirate' ? 0.16 : mode === 'techno' ? 0.125 : MUSIC_GAME_END_STEP;
+  const startStep = mode === 'fighter' ? 0.32 : mode === 'pirate' ? 0.38 : mode === 'techno' ? 0.25 : MUSIC_GAME_START_STEP;
   const combatStep = startStep + (endStep - startStep) * rush;
   return combatStep + (MUSIC_HEARTBEAT_END_STEP - combatStep) * finalHeartbeat();
 }
@@ -251,7 +258,61 @@ function schedulePirateStep() {
   music.step++;
 }
 
+function scheduleTechnoHat(start, dur, vol, pan = 0) {
+  if (!music || !audioCtx) return;
+  const n = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3);
+  const src = audioCtx.createBufferSource(); src.buffer = buf;
+  const filt = audioCtx.createBiquadFilter(); filt.type = 'highpass'; filt.frequency.value = 5200; filt.Q.value = 0.8;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(vol, start);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  let out = g;
+  if (audioCtx.createStereoPanner) { const p = audioCtx.createStereoPanner(); p.pan.value = pan; g.connect(p); out = p; }
+  src.connect(filt).connect(g); out.connect(music.sparkle);
+  src.start(start); src.stop(start + dur + 0.02);
+}
+
+function scheduleTechnoStep() {
+  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
+  const barStep = music.step % 32;
+  const chord = TECHNO_PATTERN[Math.floor(barStep / 8) % TECHNO_PATTERN.length];
+  const t = music.next;
+  const inCombat = typeof game !== 'undefined' && game.state === 'playing';
+  const urgency = inCombat ? roundProgress() : 0;
+  const step = currentMusicStep();
+  const beat = barStep % 4;
+  const cutoffBend = 0.58 + urgency * 0.16;
+
+  // Four-on-the-floor synth kick with a rubbery offbeat bass stab.
+  if (beat === 0) {
+    scheduleMusicTone(chord.root * 0.5, t, 0.18, 'sine', 0.050 + urgency * 0.018, music.pad, -0.05, 0.42);
+    scheduleCombatNoise(t + 0.012, 0.055, 0.018 + urgency * 0.01);
+  }
+  if (beat === 2) scheduleCombatNoise(t + 0.018, 0.10, 0.014 + urgency * 0.008);
+  if (beat === 1 || beat === 3) scheduleMusicTone(chord.fifth * 0.5, t + step * 0.18, 0.12, 'square', 0.024 + urgency * 0.010, music.pad, 0.10, cutoffBend);
+
+  scheduleTechnoHat(t + step * 0.48, 0.045, 0.010 + urgency * 0.006, beat % 2 ? 0.35 : -0.35);
+  if (inCombat && barStep % 2 === 1) scheduleTechnoHat(t + step * 0.18, 0.035, 0.006 + urgency * 0.004, Math.random() * 1.0 - 0.5);
+
+  if (barStep % 8 === 0) {
+    scheduleMusicTone(chord.root, t, step * 7.6, 'sawtooth', 0.015, music.pad, -0.28, 1.001);
+    scheduleMusicTone(chord.fifth, t + 0.025, step * 7.4, 'triangle', 0.010, music.pad, 0.24, 0.999);
+  }
+  if ([3, 7].includes(barStep % 8)) {
+    const riff = [chord.top, chord.top * 0.75, chord.fifth * 2, chord.top * 1.125][Math.floor(barStep / 8) % 4];
+    scheduleMusicTone(riff, t + step * 0.25, 0.10, 'square', 0.010 + urgency * 0.005, music.sparkle, 0.42, 1.012);
+  }
+  if (inCombat && barStep % 16 === 0) scheduleHeartbeatPhrase(t + step * 0.08, chord.root * 0.5, 0.18 + finalHeartbeat() * 0.65);
+
+  music.next += step;
+  music.step++;
+}
+
 function scheduleMusicStep() {
+  if (soundtrackMode() === 'techno') { scheduleTechnoStep(); return; }
   if (soundtrackMode() === 'fighter') { scheduleFighterStep(); return; }
   if (soundtrackMode() === 'pirate') { schedulePirateStep(); return; }
   if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
@@ -373,6 +434,16 @@ function chord(a, b, c, gain = 1) { playTone(a, gain); playTone(b, gain); playTo
 function arpeggio(notes, type, vol, dur = 0.08, gap = 0.045, gain = 1) {
   notes.forEach((f, i) => blip(f, f * 1.08, dur, type, vol, i * gap, gain));
 }
+function debrisBurst(dur, f0, f1, vol, delay = 0, gain = 1) {
+  noise(dur, 'bandpass', f0, f1, vol, delay, gain);
+  noise(dur * 0.55, 'highpass', f0 * 1.8, f1 * 1.35, vol * 0.45, delay + dur * 0.12, gain);
+}
+
+function impactThump(freq = 120, delay = 0, gain = 1) {
+  blip(freq, Math.max(35, freq * 0.34), 0.16, 'sine', 0.026, delay, gain);
+  noise(0.09, 'lowpass', 260, 80, 0.018, delay + 0.012, gain);
+}
+
 function waveBreathSfx(color, gain = 1) {
   // Two noise bands make an audible wave front: a rising swell followed by a rolling crash.
   const high = color === 'ice' ? 5200 : color === 'wind' ? 3400 : color === 'fire' ? 1700 : 760;
@@ -390,22 +461,25 @@ function spellSfx(id) {
   sfxLast[key] = now;
   return withAudioCategory('spell', () => {
   switch (id) {
-    case 'missile': // three tiny particle-triangle chirps snapping into one dart
-      arpeggio([1320, 1640, 1980], 'triangle', 0.014, 0.05, 0.03, SPELL_SFX_GAIN);
-      blip(2100, 980, 0.10, 'triangle', 0.012, 0.055, SPELL_SFX_GAIN);
+    case 'missile': // compressed air snap with a quick crystalline tail
+      debrisBurst(0.07, 2400, 5200, 0.010, 0, SPELL_SFX_GAIN);
+      arpeggio([1180, 1560, 1980], 'triangle', 0.010, 0.042, 0.024, SPELL_SFX_GAIN);
+      blip(2100, 860, 0.09, 'triangle', 0.010, 0.045, SPELL_SFX_GAIN);
       break;
-    case 'fireball': // ignition pop + rushing flame body
-      blip(120, 72, 0.18, 'sawtooth', 0.022, 0, SPELL_SFX_GAIN);
-      noise(0.34, 'lowpass', 1500, 260, 0.04, 0.015, SPELL_SFX_GAIN);
-      blip(420, 720, 0.14, 'triangle', 0.016, 0.04, SPELL_SFX_GAIN);
+    case 'fireball': // gas ignition pop, turbulent flame, and ember spit
+      impactThump(115, 0, SPELL_SFX_GAIN);
+      noise(0.38, 'lowpass', 1900, 240, 0.038, 0.018, SPELL_SFX_GAIN);
+      debrisBurst(0.12, 1700, 3600, 0.010, 0.08, SPELL_SFX_GAIN);
+      blip(360, 620, 0.12, 'triangle', 0.010, 0.035, SPELL_SFX_GAIN);
       break;
-    case 'frost': // glassy crystal ping with brittle ice crackle
-      chord([1550, 2280, 0.18, 'sine', 0.016], [2200, 2900, 0.14, 'triangle', 0.012, 0.035], [920, 1280, 0.20, 'sine', 0.01, 0.06], SPELL_SFX_GAIN);
-      noise(0.16, 'highpass', 3800, 5600, 0.012, 0.025, SPELL_SFX_GAIN);
+    case 'frost': // brittle ice fracture over a cold air hiss
+      chord([1450, 2180, 0.14, 'sine', 0.012], [2300, 3150, 0.12, 'triangle', 0.010, 0.03], [760, 1080, 0.16, 'sine', 0.008, 0.055], SPELL_SFX_GAIN);
+      debrisBurst(0.18, 3600, 6200, 0.012, 0.02, SPELL_SFX_GAIN);
       break;
-    case 'lightning': // instant jagged electrical snap
-      arpeggio([2200, 900, 1900, 620], 'triangle', 0.017, 0.04, 0.02, SPELL_SFX_GAIN);
-      noise(0.12, 'bandpass', 3600, 900, 0.02, 0, SPELL_SFX_GAIN);
+    case 'lightning': // sharp arc crack, buzz, and tiny thunder body
+      arpeggio([2600, 760, 2100, 540], 'square', 0.012, 0.032, 0.016, SPELL_SFX_GAIN);
+      debrisBurst(0.10, 4200, 1200, 0.018, 0, SPELL_SFX_GAIN);
+      impactThump(150, 0.045, SPELL_SFX_GAIN);
       break;
     case 'shield': // stable arcane shield lock-in, no wobble/pulse
       chord([360, 720, 0.26, 'sine', 0.022], [540, 1080, 0.24, 'sine', 0.016], [900, 900, 0.20, 'triangle', 0.011, 0.04], SPELL_SFX_GAIN);
@@ -416,10 +490,11 @@ function spellSfx(id) {
       blip(190, 105, 0.18, 'sine', 0.014, 0.13, SPELL_SFX_GAIN);
       noise(0.34, 'lowpass', 620, 180, 0.018, 0.02, SPELL_SFX_GAIN);
       break;
-    case 'meteor': // high incoming whistle into a heavy burning descent
-      blip(1150, 260, 0.46, 'sine', 0.018, 0, SPELL_SFX_GAIN);
-      noise(0.42, 'lowpass', 820, 120, 0.035, 0.08, SPELL_SFX_GAIN);
-      blip(180, 70, 0.25, 'sawtooth', 0.022, 0.22, SPELL_SFX_GAIN);
+    case 'meteor': // doppler whistle, wind shear, then rock impact
+      blip(1280, 210, 0.48, 'sine', 0.014, 0, SPELL_SFX_GAIN);
+      noise(0.48, 'lowpass', 980, 110, 0.030, 0.06, SPELL_SFX_GAIN);
+      impactThump(170, 0.22, SPELL_SFX_GAIN);
+      debrisBurst(0.18, 520, 1800, 0.018, 0.25, SPELL_SFX_GAIN);
       break;
     case 'drain': // red droplets siphoning downward along the tether
       arpeggio([760, 620, 480, 340], 'triangle', 0.014, 0.08, 0.055, SPELL_SFX_GAIN);
