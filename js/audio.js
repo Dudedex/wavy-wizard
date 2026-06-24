@@ -6,6 +6,7 @@
 
 let audioCtx = null;
 let muted = false;
+let pageAudioMuted = false;
 const sfxLast = {};
 const SPELL_SFX_GAIN = 0.68;
 
@@ -23,7 +24,7 @@ const MUSIC_PATTERN = [
 ];
 
 function ensureAudio(startMusic = true) {
-  if (muted) return false;
+  if (muted || pageAudioMuted) return false;
   if (!audioCtx) {
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
     catch (e) { muted = true; return false; }
@@ -65,7 +66,7 @@ function makeMusic() {
 }
 
 function musicLevel() {
-  if (muted || typeof game === 'undefined' || !game.opt || game.opt.volume === 0) return 0;
+  if (muted || pageAudioMuted || typeof game === 'undefined' || !game.opt || game.opt.volume === 0) return 0;
   const base = audioVolume();
   // Keep the soundtrack under spell SFX; it should feel present, not busy.
   if (game.state === 'playing') return 0.9 * base;
@@ -168,7 +169,7 @@ function scheduleHeartbeatPhrase(start, root, gain) {
 }
 
 function scheduleMusicStep() {
-  if (!music || muted || audioVolume() <= 0) return;
+  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
   const barStep = music.step % 32;
   const chord = MUSIC_PATTERN[Math.floor(barStep / 8) % MUSIC_PATTERN.length];
   const t = music.next;
@@ -230,9 +231,18 @@ function updateSoundtrack() {
   }
 }
 
+
+function setPageAudioMuted(on) {
+  pageAudioMuted = !!on;
+  updateSoundtrack();
+  if (!audioCtx) return;
+  if (pageAudioMuted) audioCtx.suspend().catch(() => {});
+  else if (!muted && audioVolume() > 0) audioCtx.resume().then(() => updateSoundtrack()).catch(() => {});
+}
+
 function blip(f0, f1, dur, type, vol, delay = 0, gain = 1) {
   const v = vol * gain * (game.opt && game.opt.volume !== undefined ? game.opt.volume : 1);
-  if (muted || v <= 0) return;
+  if (muted || pageAudioMuted || v <= 0) return;
   vol = v;
   if (!ensureAudio()) return;
   const t = audioCtx.currentTime + delay;
@@ -251,7 +261,7 @@ function blip(f0, f1, dur, type, vol, delay = 0, gain = 1) {
 // Filtered white-noise burst — for whooshes, fire/wind/earth/ice breath, etc.
 function noise(dur, filterType, f0, f1, vol, delay = 0, gain = 1) {
   const v = vol * gain * (game.opt && game.opt.volume !== undefined ? game.opt.volume : 1);
-  if (muted || v <= 0) return;
+  if (muted || pageAudioMuted || v <= 0) return;
   if (!ensureAudio()) return;
   const t = audioCtx.currentTime + delay;
   const n = Math.floor(audioCtx.sampleRate * dur);

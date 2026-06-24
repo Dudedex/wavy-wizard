@@ -130,7 +130,9 @@ function pollGamepad() {
     ps.last = gp.buttons.map(b => b.pressed);
   }
 }
-window.addEventListener('blur', () => { if (game.state === 'playing') togglePause(); });
+window.addEventListener('blur', () => { setPageAudioMuted(true); if (game.state === 'playing') togglePause(); });
+window.addEventListener('focus', () => setPageAudioMuted(document.hidden));
+document.addEventListener('visibilitychange', () => setPageAudioMuted(document.hidden));
 
 // ---------------------------------------------------------------------------
 // Mobile: rotate-to-landscape prompt + transparent on-screen touch controls.
