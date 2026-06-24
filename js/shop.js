@@ -142,7 +142,8 @@ const SHOP_EVENTS = {
     desc: () => 'Open a chest for a random item — could be a steal, could be junk.',
     cost: () => 15, can: g => g.gold >= 15,
     label: () => 'Open — 15g',
-    act: g => { g.gold -= 15; const it = pick(ITEMS); if (it.apply) it.apply(g.player.stats); if (it.proc) addProcItem(it.id); recordItem(it.id); g.player.hp = Math.min(g.player.hp, g.player.stats.maxHp); addText(g.player.x, g.player.y - 40, `Won: ${it.name}!`, '#ffd454', 18); },
+    // grants a random item: the card reveals what it becomes, then stashes it (see buy flow)
+    roll: () => pick(ITEMS),
   },
   alchemist: {
     icon: '⚗️', name: 'The Alchemist',
@@ -157,7 +158,8 @@ const SHOP_EVENTS = {
     cost: g => Math.round(itemPrice(ITEMS.find(i => i.id === 'skull')) * 0.6),
     can: g => g.gold >= Math.round(itemPrice(ITEMS.find(i => i.id === 'skull')) * 0.6),
     label: g => `Buy — ${Math.round(itemPrice(ITEMS.find(i => i.id === 'skull')) * 0.6)}g`,
-    act: g => { const it = pick(ITEMS.filter(i => ['skull', 'glass', 'bloodpact'].includes(i.id))); const c = Math.round(itemPrice(ITEMS.find(i => i.id === 'skull')) * 0.6); g.gold -= c; it.apply(g.player.stats); recordItem(it.id); g.player.hp = Math.min(g.player.hp, g.player.stats.maxHp); addText(g.player.x, g.player.y - 40, `Cursed: ${it.name}`, '#ff5577', 17); },
+    roll: () => pick(ITEMS.filter(i => ['skull', 'glass', 'bloodpact'].includes(i.id))),
+    curse: true,
   },
   // --- "Build debt": power now, a delayed cost next wave ---
   demon: {
@@ -185,6 +187,30 @@ const SHOP_EVENTS = {
 
 function rerollCost() {
   return 5 * Math.pow(2, game.rerolls);
+}
+
+// Apply a granted item (Treasure Chest / Black Market) to the player + stash.
+function applyGrantedItem(g, it) {
+  if (it.apply) it.apply(g.player.stats);
+  if (it.proc) addProcItem(it.id);
+  recordItem(it.id);
+  g.player.hp = Math.min(g.player.hp, g.player.stats.maxHp);
+}
+
+// Finalize a pending reveal: stash the rolled item once the 3s delay elapses.
+// Idempotent — safe to call from re-renders / multiple timers.
+function claimRevealItem(offer) {
+  if (!offer || !offer.reveal || offer.reveal.claimed) return;
+  offer.reveal.claimed = true;
+  offer.sold = true;
+  const it = ITEMS.find(i => i.id === offer.reveal.id);
+  if (it) {
+    applyGrantedItem(game, it);
+    addText(game.player.x, game.player.y - 40, `${offer.reveal.curse ? 'Cursed' : 'Won'}: ${it.name}!`, offer.reveal.curse ? '#ff5577' : '#ffd454', 18);
+    sfx('shopBuy');
+  }
+  if (game.state === 'shop') { refreshShopIfRoundBoughtOut(); renderShop(); }
+  saveRun();
 }
 
 function openShop() {
@@ -298,9 +324,25 @@ function renderShop() {
       return;
     }
     if (offer.kind === 'event') {
-      card.className = 'card event';
       const ev = SHOP_EVENTS[offer.ev];
-      const cost = ev.cost(game);
+      // Reveal state: the offer has been opened and is morphing into the rolled
+      // item, which drops into the stash after a 3s delay.
+      if (offer.reveal && !offer.reveal.claimed) {
+        const remain = Math.max(0, 3000 - (performance.now() - offer.reveal.t0));
+        setTimeout(() => claimRevealItem(offer), remain); // idempotent; re-renders reschedule safely
+        const it = ITEMS.find(i => i.id === offer.reveal.id) || { icon: '❔', name: '???', desc: '' };
+        card.className = 'card event revealing';
+        card.innerHTML = `
+          <div class="icon">${it.icon}</div>
+          <div class="name">${it.name}</div>
+          <div class="tier-badge" style="color:${offer.reveal.curse ? '#ff5577' : '#ffd454'}">${offer.reveal.curse ? '🩸 Cursed' : '✦ Won'}</div>
+          <div class="desc">${signColor(it.desc || '')}</div>
+          <div class="reveal-status">📦 Stashing in ${Math.ceil(remain / 1000)}s…</div>
+          <div class="reveal-bar"><i style="animation-duration:${remain}ms"></i></div>`;
+        row.appendChild(card);
+        return;
+      }
+      card.className = 'card event';
       card.innerHTML = `
         <div class="icon">${ev.icon}</div>
         <div class="name">${ev.name}</div>
@@ -310,7 +352,18 @@ function renderShop() {
       btn.className = 'buy-btn legendary-btn';
       btn.textContent = ev.label(game);
       btn.disabled = !ev.can(game);
-      btn.onclick = () => { ev.act(game); offer.sold = true; sfx(ev.debt ? 'shopLegendary' : 'shopBuy'); refreshShopIfRoundBoughtOut(); renderShop(); saveRun(); };
+      btn.onclick = () => {
+        if (ev.roll) {
+          // item-granting event: deduct, roll, then reveal → stash after 3s
+          game.gold -= ev.cost(game);
+          const it = ev.roll(game);
+          offer.reveal = { id: it.id, t0: performance.now(), curse: !!ev.curse };
+          sfx(ev.debt ? 'shopLegendary' : 'shopBuy');
+          renderShop(); saveRun();
+        } else {
+          ev.act(game); offer.sold = true; sfx(ev.debt ? 'shopLegendary' : 'shopBuy'); refreshShopIfRoundBoughtOut(); renderShop(); saveRun();
+        }
+      };
       card.appendChild(btn);
       row.appendChild(card);
       return;

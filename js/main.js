@@ -92,7 +92,13 @@ window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'KeyM') { muted = !muted; game.opt.muted = muted; saveOpts(); updateSoundtrack(); addText(game.player.x, game.player.y - 40, muted ? 'MUTED' : 'SOUND ON', '#9fb0c8', 14); }
   if (e.code === 'Tab') { game.showMeter = !game.showMeter; e.preventDefault(); }
-  if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
+  if (e.code === 'KeyP') togglePause();
+  if (e.code === 'Escape') {
+    const inFs = document.fullscreenElement || document.webkitFullscreenElement;
+    if (game.state === 'playing') togglePause();           // 1st hit: pause the game
+    else if (game.state === 'paused' && inFs) toggleFullscreen(); // while paused in FS: quit fullscreen
+    else if (game.state === 'paused') togglePause();        // not in FS: resume
+  }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -3573,21 +3579,41 @@ document.getElementById('btn-achievements').onclick = () => { sfx('buy'); showAc
 
 // Fullscreen: take over the whole screen (no browser chrome). Toggles on the
 // game wrapper so the canvas + overlays all go fullscreen together.
+function fullscreenSupported() {
+  const el = document.getElementById('game-wrap');
+  return !!(el && (el.requestFullscreen || el.webkitRequestFullscreen) && (document.fullscreenEnabled !== false));
+}
 function toggleFullscreen() {
   const el = document.getElementById('game-wrap');
-  if (!document.fullscreenElement) {
-    (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el);
-  } else {
-    (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
-  }
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  try {
+    if (!fsEl) {
+      const req = (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+      if (req && req.catch) req.catch(() => {}); // ignore gesture/permission rejections
+    } else {
+      const ex = (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      if (ex && ex.catch) ex.catch(() => {});
+    }
+  } catch (e) { /* fullscreen unavailable — ignore */ }
 }
 function syncFullscreenBtn() {
-  const btn = document.getElementById('btn-fullscreen');
-  if (btn) btn.textContent = document.fullscreenElement ? '⛶ Exit Fullscreen' : '⛶ Fullscreen';
+  const inFs = document.fullscreenElement || document.webkitFullscreenElement;
+  for (const id of ['btn-fullscreen', 'btn-pause-fullscreen']) {
+    const btn = document.getElementById(id);
+    if (btn) btn.textContent = inFs ? '⛶ Exit Fullscreen' : '⛶ Fullscreen';
+  }
 }
 document.getElementById('btn-fullscreen').onclick = () => { sfx('buy'); toggleFullscreen(); };
+document.getElementById('btn-pause-fullscreen').onclick = () => { sfx('buy'); toggleFullscreen(); };
+// Hide the buttons where element-fullscreen isn't available (e.g. iOS Safari).
+if (!fullscreenSupported()) {
+  document.getElementById('btn-fullscreen').style.display = 'none';
+  document.getElementById('btn-pause-fullscreen').style.display = 'none';
+}
 document.addEventListener('fullscreenchange', () => { syncFullscreenBtn(); updateUiScale(); });
+document.addEventListener('webkitfullscreenchange', () => { syncFullscreenBtn(); updateUiScale(); });
 document.getElementById('btn-ach-back').onclick = () => setState('title');
+document.getElementById('btn-resume-game').onclick = () => { if (game.state === 'paused') togglePause(); };
 document.getElementById('btn-pause-settings').onclick = () => openSettings('paused');
 document.getElementById('btn-quit-round').onclick = quitRound;
 document.getElementById('btn-settings-back').onclick = () => {
@@ -4851,12 +4877,16 @@ function drawHUD() {
       const t = Math.max(1, game.waveTime);
       const total = entries.reduce((acc, [, v]) => acc + v, 0);
       const max = entries[0][1];
-      const mw = 235, rowH = 21, mx = W - mw - 36, my = 76;
+      const mw = 235, rowH = 21;
       const mh = 42 + entries.length * rowH;
+      const mx = 16, my = H - mh - 16; // bottom-left corner
+      // fade out when a body stands over the meter — compare in SCREEN space (the
+      // camera means world coords no longer equal on-screen coords)
       const meterPlayers = [game.player, game.p2].filter(Boolean);
       const nearestMeterDist = meterPlayers.reduce((best, pl) => {
-        const dx = Math.max(mx - pl.x, 0, pl.x - (mx + mw));
-        const dy = Math.max(my - pl.y, 0, pl.y - (my + mh));
+        const psx = pl.x - game.cam.x, psy = pl.y - game.cam.y;
+        const dx = Math.max(mx - psx, 0, psx - (mx + mw));
+        const dy = Math.max(my - psy, 0, psy - (my + mh));
         return Math.min(best, Math.hypot(dx, dy));
       }, Infinity);
       const meterAlpha = clamp(nearestMeterDist / 160, 0.08, 1);

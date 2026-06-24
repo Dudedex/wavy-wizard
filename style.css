@@ -487,6 +487,13 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
   background: linear-gradient(180deg, #2a2614, #131a2c 60%);
   box-shadow: 0 0 18px rgba(255, 212, 84, 0.28);
 }
+/* an event morphing into the item it grants, before it drops into the stash */
+.card.event.revealing { animation: reveal-pop 0.35s ease; }
+@keyframes reveal-pop { 0% { transform: scale(0.9); } 60% { transform: scale(1.05); } 100% { transform: scale(1); } }
+.reveal-status { margin-top: auto; font-size: 12px; font-weight: 700; color: #8be0ff; }
+.reveal-bar { width: 100%; height: 6px; margin-top: 6px; border-radius: 4px; background: #0d1428; overflow: hidden; }
+.reveal-bar > i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #5fb4ff, #ffd454); transform-origin: left; animation-name: reveal-fill; animation-timing-function: linear; animation-fill-mode: forwards; }
+@keyframes reveal-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 #shop-summary {
   width: min(680px, 96%);
   margin: 0 auto;
