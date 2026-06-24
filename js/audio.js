@@ -22,6 +22,12 @@ const MUSIC_PATTERN = [
   { root: 174.61, fifth: 261.63, top: 440.00 }, // Fmaj9-ish
   { root: 110.00, fifth: 164.81, top: 293.66 }, // Am11-ish
 ];
+const FIGHTER_PATTERN = [
+  { root: 98.00, fifth: 146.83, top: 293.66 },
+  { root: 116.54, fifth: 174.61, top: 349.23 },
+  { root: 87.31, fifth: 130.81, top: 261.63 },
+  { root: 130.81, fifth: 196.00, top: 392.00 },
+];
 
 function ensureAudio(startMusic = true) {
   if (muted || pageAudioMuted) return false;
@@ -36,6 +42,10 @@ function ensureAudio(startMusic = true) {
 
 function audioVolume() {
   return game.opt && game.opt.volume !== undefined ? game.opt.volume : 1;
+}
+
+function soundtrackMode() {
+  return game.opt && game.opt.soundtrack === 'fighter' ? 'fighter' : 'ambient';
 }
 
 function makeMusic() {
@@ -95,7 +105,9 @@ function currentMusicStep() {
   // Ease out so combat tempo ramps noticeably earlier instead of saving the
   // speed-up for only the final seconds.
   const rush = Math.sqrt(roundProgress());
-  const combatStep = MUSIC_GAME_START_STEP + (MUSIC_GAME_END_STEP - MUSIC_GAME_START_STEP) * rush;
+  const endStep = soundtrackMode() === 'fighter' ? 0.14 : MUSIC_GAME_END_STEP;
+  const startStep = soundtrackMode() === 'fighter' ? 0.32 : MUSIC_GAME_START_STEP;
+  const combatStep = startStep + (endStep - startStep) * rush;
   return combatStep + (MUSIC_HEARTBEAT_END_STEP - combatStep) * finalHeartbeat();
 }
 
@@ -168,7 +180,33 @@ function scheduleHeartbeatPhrase(start, root, gain) {
   for (const [delay, freq, dur, vol] of hits) scheduleMusicTone(freq, start + delay, dur, 'triangle', vol * gain, music.pad, 0, 0.68);
 }
 
+
+function scheduleFighterStep() {
+  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
+  const barStep = music.step % 16;
+  const chord = FIGHTER_PATTERN[Math.floor(barStep / 4) % FIGHTER_PATTERN.length];
+  const t = music.next;
+  const inCombat = typeof game !== 'undefined' && game.state === 'playing';
+  const urgency = inCombat ? roundProgress() : 0;
+  const step = currentMusicStep();
+  const bass = [chord.root * 0.5, chord.root * 0.5, chord.fifth * 0.5, chord.root * 0.75][barStep % 4];
+  scheduleMusicTone(bass, t, 0.16, 'square', 0.030 + urgency * 0.018, music.pad, -0.1, 0.78);
+  if (barStep % 2 === 1) scheduleCombatNoise(t + 0.03, 0.13, 0.016 + urgency * 0.012);
+  if (inCombat && barStep % 4 === 0) scheduleHeartbeatPhrase(t + 0.02, chord.root * 0.5, 0.26 + finalHeartbeat() * 0.9);
+  if ([1, 3].includes(barStep % 4)) {
+    const hook = [chord.top, chord.fifth * 1.5, chord.top * 0.75, chord.fifth][Math.floor(barStep / 4) % 4];
+    scheduleMusicTone(hook, t + step * 0.45, 0.18, 'triangle', 0.012 + urgency * 0.004, music.sparkle, 0.35, 0.94);
+  }
+  if (barStep % 8 === 0) {
+    scheduleMusicTone(chord.root, t, step * 7.5, 'sawtooth', 0.012, music.pad, -0.35, 1.002);
+    scheduleMusicTone(chord.fifth, t + 0.04, step * 7, 'triangle', 0.010, music.pad, 0.25, 0.998);
+  }
+  music.next += step;
+  music.step++;
+}
+
 function scheduleMusicStep() {
+  if (soundtrackMode() === 'fighter') { scheduleFighterStep(); return; }
   if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
   const barStep = music.step % 32;
   const chord = MUSIC_PATTERN[Math.floor(barStep / 8) % MUSIC_PATTERN.length];

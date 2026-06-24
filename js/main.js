@@ -2489,6 +2489,10 @@ const SETTINGS = [
 ];
 
 const VOLUME_STEPS = [0, 0.25, 0.5, 1];
+const SOUNDTRACK_CHOICES = [
+  { id: 'ambient', label: 'Ambient Wizard' },
+  { id: 'fighter', label: 'Arcade Fighter' },
+];
 
 function renderSettings() {
   const el = document.getElementById('settings-list');
@@ -2513,6 +2517,14 @@ function renderSettings() {
   });
   row('Mute all (M)', muted ? 'MUTED' : 'ON', !muted, () => {
     muted = !muted; game.opt.muted = muted; saveOpts(); updateSoundtrack(); renderSettings();
+  });
+  const soundtrack = game.opt.soundtrack || 'ambient';
+  const stIdx = Math.max(0, SOUNDTRACK_CHOICES.findIndex(s => s.id === soundtrack));
+  row('Soundtrack', SOUNDTRACK_CHOICES[stIdx].label, true, () => {
+    const next = SOUNDTRACK_CHOICES[(stIdx + 1) % SOUNDTRACK_CHOICES.length];
+    game.opt.soundtrack = next.id;
+    if (music) { music.step = 0; music.next = audioCtx ? audioCtx.currentTime + 0.04 : 0; music.nextHeartbeat = 0; }
+    saveOpts(); updateSoundtrack(); sfx('buy'); renderSettings();
   });
 
   // --- Colour scheme ---
