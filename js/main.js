@@ -2510,12 +2510,18 @@ function renderSettings() {
 
   // --- Audio ---
   section('Audio');
-  const vol = game.opt.volume !== undefined ? game.opt.volume : 1;
-  row('Volume', vol <= 0 ? 'Off' : Math.round(vol * 100) + '%', vol > 0, () => {
-    let idx = VOLUME_STEPS.indexOf(vol); if (idx === -1) idx = VOLUME_STEPS.length - 1;
-    game.opt.volume = VOLUME_STEPS[(idx + 1) % VOLUME_STEPS.length];
-    saveOpts(); updateSoundtrack(); sfx('buy'); renderSettings();
-  });
+  const volumeRow = (key, label) => {
+    const vol = game.opt[key] !== undefined ? game.opt[key] : 1;
+    row(label, vol <= 0 ? 'Off' : Math.round(vol * 100) + '%', vol > 0, () => {
+      let idx = VOLUME_STEPS.indexOf(vol); if (idx === -1) idx = VOLUME_STEPS.length - 1;
+      game.opt[key] = VOLUME_STEPS[(idx + 1) % VOLUME_STEPS.length];
+      saveOpts(); updateSoundtrack(); sfx('buy'); renderSettings();
+    });
+  };
+  volumeRow('volume', 'Master volume');
+  volumeRow('spellVolume', 'Spell effects');
+  volumeRow('musicVolume', 'Soundtrack');
+  volumeRow('menuVolume', 'Menu sounds');
   row('Mute all (M)', muted ? 'MUTED' : 'ON', !muted, () => {
     muted = !muted; game.opt.muted = muted; saveOpts(); updateSoundtrack(); renderSettings();
   });

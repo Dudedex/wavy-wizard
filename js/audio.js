@@ -9,6 +9,8 @@ let muted = false;
 let pageAudioMuted = false;
 const sfxLast = {};
 const SPELL_SFX_GAIN = 0.68;
+let activeAudioCategory = 'spell';
+const MENU_SFX = new Set(['buy', 'shopBuy', 'shopSpell', 'shopFuse', 'shopReroll', 'shopLock', 'shopSell', 'shopDeny', 'shopLegendary', 'sell']);
 
 let music = null;
 const MUSIC_LOOKAHEAD = 0.18;
@@ -46,8 +48,18 @@ function ensureAudio(startMusic = true) {
   return true;
 }
 
-function audioVolume() {
-  return game.opt && game.opt.volume !== undefined ? game.opt.volume : 1;
+function audioVolume(category = 'master') {
+  const master = game.opt && game.opt.volume !== undefined ? game.opt.volume : 1;
+  if (category === 'music') return master * (game.opt && game.opt.musicVolume !== undefined ? game.opt.musicVolume : 1);
+  if (category === 'menu') return master * (game.opt && game.opt.menuVolume !== undefined ? game.opt.menuVolume : 1);
+  if (category === 'spell') return master * (game.opt && game.opt.spellVolume !== undefined ? game.opt.spellVolume : 1);
+  return master;
+}
+
+function withAudioCategory(category, fn) {
+  const prev = activeAudioCategory;
+  activeAudioCategory = category;
+  try { return fn(); } finally { activeAudioCategory = prev; }
 }
 
 function soundtrackMode() {
@@ -86,7 +98,7 @@ function makeMusic() {
 
 function musicLevel() {
   if (muted || pageAudioMuted || typeof game === 'undefined' || !game.opt || game.opt.volume === 0) return 0;
-  const base = audioVolume();
+  const base = audioVolume('music');
   // Keep the soundtrack under spell SFX; it should feel present, not busy.
   if (game.state === 'playing') return 0.9 * base;
   if (['paused', 'levelup', 'mastery', 'shop', 'settings'].includes(game.state)) return 0.32 * base;
@@ -314,7 +326,7 @@ function setPageAudioMuted(on) {
 }
 
 function blip(f0, f1, dur, type, vol, delay = 0, gain = 1) {
-  const v = vol * gain * (game.opt && game.opt.volume !== undefined ? game.opt.volume : 1);
+  const v = vol * gain * audioVolume(activeAudioCategory);
   if (muted || pageAudioMuted || v <= 0) return;
   vol = v;
   if (!ensureAudio()) return;
@@ -333,7 +345,7 @@ function blip(f0, f1, dur, type, vol, delay = 0, gain = 1) {
 
 // Filtered white-noise burst — for whooshes, fire/wind/earth/ice breath, etc.
 function noise(dur, filterType, f0, f1, vol, delay = 0, gain = 1) {
-  const v = vol * gain * (game.opt && game.opt.volume !== undefined ? game.opt.volume : 1);
+  const v = vol * gain * audioVolume(activeAudioCategory);
   if (muted || pageAudioMuted || v <= 0) return;
   if (!ensureAudio()) return;
   const t = audioCtx.currentTime + delay;
@@ -376,6 +388,7 @@ function spellSfx(id) {
   const key = 'sp:' + id;
   if (sfxLast[key] && now - sfxLast[key] < 45) return;
   sfxLast[key] = now;
+  return withAudioCategory('spell', () => {
   switch (id) {
     case 'missile': // three tiny particle-triangle chirps snapping into one dart
       arpeggio([1320, 1640, 1980], 'triangle', 0.014, 0.05, 0.03, SPELL_SFX_GAIN);
@@ -438,12 +451,14 @@ function spellSfx(id) {
     default:
       blip(700, 320, 0.08, 'triangle', 0.016, 0, SPELL_SFX_GAIN);
   }
+  });
 }
 
 function sfx(name) {
   const now = performance.now();
   if (sfxLast[name] && now - sfxLast[name] < 50) return; // throttle spam
   sfxLast[name] = now;
+  return withAudioCategory(MENU_SFX.has(name) ? 'menu' : 'spell', () => {
   switch (name) {
     case 'shoot':  blip(700, 320, 0.08, 'triangle', 0.016, 0, SPELL_SFX_GAIN); break;
     case 'hit':    blip(300, 150, 0.06, 'triangle', 0.04); break;
@@ -469,4 +484,5 @@ function sfx(name) {
     case 'death':  blip(300, 30, 0.6, 'sawtooth', 0.1); break;
     case 'win':    blip(523, 1046, 0.5, 'square', 0.06); break;
   }
+  });
 }
