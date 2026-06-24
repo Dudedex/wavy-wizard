@@ -90,7 +90,7 @@ window.addEventListener('keydown', e => {
     return;
   }
   keys[e.code] = true;
-  if (e.code === 'KeyM') { muted = !muted; game.opt.muted = muted; saveOpts(); addText(game.player.x, game.player.y - 40, muted ? 'MUTED' : 'SOUND ON', '#9fb0c8', 14); }
+  if (e.code === 'KeyM') { muted = !muted; game.opt.muted = muted; saveOpts(); updateSoundtrack(); addText(game.player.x, game.player.y - 40, muted ? 'MUTED' : 'SOUND ON', '#9fb0c8', 14); }
   if (e.code === 'Tab') { game.showMeter = !game.showMeter; e.preventDefault(); }
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
@@ -130,7 +130,9 @@ function pollGamepad() {
     ps.last = gp.buttons.map(b => b.pressed);
   }
 }
-window.addEventListener('blur', () => { if (game.state === 'playing') togglePause(); });
+window.addEventListener('blur', () => { setPageAudioMuted(true); if (game.state === 'playing') togglePause(); });
+window.addEventListener('focus', () => setPageAudioMuted(document.hidden));
+document.addEventListener('visibilitychange', () => setPageAudioMuted(document.hidden));
 
 // ---------------------------------------------------------------------------
 // Mobile: rotate-to-landscape prompt + transparent on-screen touch controls.
@@ -2486,7 +2488,11 @@ const SETTINGS = [
   { key: 'dmgNumbers', label: 'Floating damage numbers', invert: true },
 ];
 
-const VOLUME_STEPS = [0, 0.25, 0.5, 1];
+const SOUNDTRACK_CHOICES = [
+  { id: 'ambient', label: 'Ambient Wizard' },
+  { id: 'fighter', label: 'Arcade Fighter' },
+  { id: 'pirate', label: 'High Seas Adventure' },
+];
 
 function renderSettings() {
   const el = document.getElementById('settings-list');
@@ -2503,14 +2509,54 @@ function renderSettings() {
 
   // --- Audio ---
   section('Audio');
-  const vol = game.opt.volume !== undefined ? game.opt.volume : 1;
-  row('Volume', vol <= 0 ? 'Off' : Math.round(vol * 100) + '%', vol > 0, () => {
-    let idx = VOLUME_STEPS.indexOf(vol); if (idx === -1) idx = VOLUME_STEPS.length - 1;
-    game.opt.volume = VOLUME_STEPS[(idx + 1) % VOLUME_STEPS.length];
-    saveOpts(); sfx('buy'); renderSettings();
-  });
+  const volumeSlider = (key, label) => {
+    const vol = game.opt[key] !== undefined ? game.opt[key] : 1;
+    const r = document.createElement('div'); r.className = 'bind-row';
+    r.innerHTML = `<span class="bind-name">${label}</span>`;
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '10px';
+    const value = document.createElement('span');
+    value.className = 'key-btn on';
+    value.style.minWidth = '64px';
+    value.textContent = vol <= 0 ? 'Off' : Math.round(vol * 100) + '%';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0'; slider.max = '100'; slider.step = '5';
+    slider.value = Math.round(vol * 100);
+    slider.oninput = () => {
+      const next = Number(slider.value) / 100;
+      game.opt[key] = next;
+      value.textContent = next <= 0 ? 'Off' : Math.round(next * 100) + '%';
+      saveOpts(); updateSoundtrack();
+    };
+    slider.onchange = () => sfx('buy');
+    wrap.appendChild(slider); wrap.appendChild(value);
+    r.appendChild(wrap); el.appendChild(r);
+  };
+  const resetSoundSettings = () => {
+    game.opt.volume = 1;
+    game.opt.spellVolume = 1;
+    game.opt.musicVolume = 1;
+    game.opt.menuVolume = 1;
+    saveOpts(); updateSoundtrack(); sfx('buy'); renderSettings();
+  };
+  volumeSlider('volume', 'Master volume');
+  volumeSlider('spellVolume', 'Spell effects');
+  volumeSlider('musicVolume', 'Soundtrack');
+  volumeSlider('menuVolume', 'Menu sounds');
+  row('Reset sound settings', 'RESET', true, resetSoundSettings);
   row('Mute all (M)', muted ? 'MUTED' : 'ON', !muted, () => {
-    muted = !muted; game.opt.muted = muted; saveOpts(); renderSettings();
+    muted = !muted; game.opt.muted = muted; saveOpts(); updateSoundtrack(); renderSettings();
+  });
+  const soundtrack = game.opt.soundtrack || 'ambient';
+  const stIdx = Math.max(0, SOUNDTRACK_CHOICES.findIndex(s => s.id === soundtrack));
+  row('Soundtrack', SOUNDTRACK_CHOICES[stIdx].label, true, () => {
+    const next = SOUNDTRACK_CHOICES[(stIdx + 1) % SOUNDTRACK_CHOICES.length];
+    game.opt.soundtrack = next.id;
+    if (music) { music.step = 0; music.next = audioCtx ? audioCtx.currentTime + 0.04 : 0; music.nextHeartbeat = 0; }
+    saveOpts(); updateSoundtrack(); sfx('buy'); renderSettings();
   });
 
   // --- Colour scheme ---
@@ -2541,6 +2587,7 @@ function setState(s) {
   }
   if (s === 'title') renderTitleScoreboard();
   updateTouchControls();
+  updateSoundtrack();
 }
 
 function togglePause() {

@@ -6,17 +6,330 @@
 
 let audioCtx = null;
 let muted = false;
+let pageAudioMuted = false;
 const sfxLast = {};
 const SPELL_SFX_GAIN = 0.68;
+let activeAudioCategory = 'spell';
+const MENU_SFX = new Set(['buy', 'shopBuy', 'shopSpell', 'shopFuse', 'shopReroll', 'shopLock', 'shopSell', 'shopDeny', 'shopLegendary', 'sell']);
 
-function blip(f0, f1, dur, type, vol, delay = 0, gain = 1) {
-  const v = vol * gain * (game.opt && game.opt.volume !== undefined ? game.opt.volume : 1);
-  if (muted || v <= 0) return;
-  vol = v;
+let music = null;
+const MUSIC_LOOKAHEAD = 0.18;
+const MUSIC_MENU_STEP = 0.5;
+const MUSIC_GAME_START_STEP = 0.44;
+const MUSIC_GAME_END_STEP = 0.18;
+const MUSIC_HEARTBEAT_END_STEP = 0.12;
+const MUSIC_PATTERN = [
+  { root: 146.83, fifth: 220.00, top: 369.99 }, // Dm9-ish
+  { root: 130.81, fifth: 196.00, top: 329.63 }, // Cmaj7-ish
+  { root: 174.61, fifth: 261.63, top: 440.00 }, // Fmaj9-ish
+  { root: 110.00, fifth: 164.81, top: 293.66 }, // Am11-ish
+];
+const FIGHTER_PATTERN = [
+  { root: 98.00, fifth: 146.83, top: 293.66 },
+  { root: 116.54, fifth: 174.61, top: 349.23 },
+  { root: 87.31, fifth: 130.81, top: 261.63 },
+  { root: 130.81, fifth: 196.00, top: 392.00 },
+];
+const PIRATE_PATTERN = [
+  { root: 146.83, fifth: 220.00, top: 293.66 }, // Dm
+  { root: 130.81, fifth: 196.00, top: 261.63 }, // C
+  { root: 116.54, fifth: 174.61, top: 233.08 }, // Bb
+  { root: 110.00, fifth: 164.81, top: 220.00 }, // A
+];
+
+function ensureAudio(startMusic = true) {
+  if (muted || pageAudioMuted) return false;
   if (!audioCtx) {
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-    catch (e) { muted = true; return; }
+    catch (e) { muted = true; return false; }
   }
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  if (startMusic && typeof game !== 'undefined' && musicLevel() > 0) setTimeout(updateSoundtrack, 0);
+  return true;
+}
+
+function audioVolume(category = 'master') {
+  const master = game.opt && game.opt.volume !== undefined ? game.opt.volume : 1;
+  if (category === 'music') return master * (game.opt && game.opt.musicVolume !== undefined ? game.opt.musicVolume : 1);
+  if (category === 'menu') return master * (game.opt && game.opt.menuVolume !== undefined ? game.opt.menuVolume : 1);
+  if (category === 'spell') return master * (game.opt && game.opt.spellVolume !== undefined ? game.opt.spellVolume : 1);
+  return master;
+}
+
+function withAudioCategory(category, fn) {
+  const prev = activeAudioCategory;
+  activeAudioCategory = category;
+  try { return fn(); } finally { activeAudioCategory = prev; }
+}
+
+function soundtrackMode() {
+  if (typeof game === 'undefined' || !game.opt) return 'ambient';
+  if (game.opt.soundtrack === 'fighter') return 'fighter';
+  if (game.opt.soundtrack === 'pirate') return 'pirate';
+  return 'ambient';
+}
+
+function makeMusic() {
+  if (!ensureAudio(false)) return null;
+  const master = audioCtx.createGain();
+  const pad = audioCtx.createGain();
+  const sparkle = audioCtx.createGain();
+  const lowpass = audioCtx.createBiquadFilter();
+  const spaceDelay = audioCtx.createDelay();
+  const delayFeedback = audioCtx.createGain();
+  const spaceWet = audioCtx.createGain();
+  lowpass.type = 'lowpass';
+  lowpass.frequency.value = 1850;
+  lowpass.Q.value = 0.7;
+  spaceDelay.delayTime.value = 0.42;
+  delayFeedback.gain.value = 0.28;
+  spaceWet.gain.value = 0;
+  pad.gain.value = 1;
+  sparkle.gain.value = 1;
+  pad.connect(lowpass).connect(master);
+  sparkle.connect(master);
+  sparkle.connect(spaceDelay);
+  spaceDelay.connect(delayFeedback).connect(spaceDelay);
+  spaceDelay.connect(spaceWet).connect(master);
+  master.gain.value = 0;
+  master.connect(audioCtx.destination);
+  return { master, pad, sparkle, spaceWet, timer: null, next: audioCtx.currentTime, nextHeartbeat: 0, step: 0, running: false };
+}
+
+function musicLevel() {
+  if (muted || pageAudioMuted || typeof game === 'undefined' || !game.opt || game.opt.volume === 0) return 0;
+  const base = audioVolume('music');
+  // Keep the soundtrack under spell SFX; it should feel present, not busy.
+  if (game.state === 'playing') return 0.9 * base;
+  if (['paused', 'levelup', 'mastery', 'shop', 'settings'].includes(game.state)) return 0.32 * base;
+  return 0;
+}
+
+function roundProgress() {
+  if (typeof game === 'undefined' || game.state !== 'playing') return 0;
+  const dur = Number.isFinite(game.waveDur) ? game.waveDur : 60;
+  return Math.max(0, Math.min(1, (game.waveTime || 0) / Math.max(1, dur)));
+}
+
+function roundRemaining() {
+  if (typeof game === 'undefined' || game.state !== 'playing' || !Number.isFinite(game.waveDur)) return Infinity;
+  return Math.max(0, game.waveDur - (game.waveTime || 0));
+}
+
+function finalHeartbeat() {
+  const left = roundRemaining();
+  return left <= 10 ? 1 - left / 10 : 0;
+}
+
+function currentMusicStep() {
+  if (typeof game === 'undefined' || game.state !== 'playing') return MUSIC_MENU_STEP;
+  // Ease out so combat tempo ramps noticeably earlier instead of saving the
+  // speed-up for only the final seconds.
+  const rush = Math.sqrt(roundProgress());
+  const mode = soundtrackMode();
+  const endStep = mode === 'fighter' ? 0.14 : mode === 'pirate' ? 0.16 : MUSIC_GAME_END_STEP;
+  const startStep = mode === 'fighter' ? 0.32 : mode === 'pirate' ? 0.38 : MUSIC_GAME_START_STEP;
+  const combatStep = startStep + (endStep - startStep) * rush;
+  return combatStep + (MUSIC_HEARTBEAT_END_STEP - combatStep) * finalHeartbeat();
+}
+
+function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1) {
+  if (!music || !audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, start);
+  if (bend !== 1) osc.frequency.exponentialRampToValueAtTime(Math.max(20, freq * bend), start + dur);
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.linearRampToValueAtTime(vol, start + 0.25);
+  g.gain.setValueAtTime(vol, start + Math.max(0.26, dur - 0.7));
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  let out = g;
+  if (audioCtx.createStereoPanner) {
+    const p = audioCtx.createStereoPanner();
+    p.pan.value = pan;
+    g.connect(p); out = p;
+  }
+  osc.connect(g);
+  out.connect(dest);
+  osc.start(start);
+  osc.stop(start + dur + 0.05);
+}
+
+function scheduleMusicNoise(start, dur, vol, pan = 0) {
+  if (!music || !audioCtx) return;
+  const n = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+  const src = audioCtx.createBufferSource(); src.buffer = buf;
+  const filt = audioCtx.createBiquadFilter(); filt.type = 'bandpass'; filt.frequency.value = 2500 + Math.random() * 1800; filt.Q.value = 8;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.linearRampToValueAtTime(vol, start + 0.05);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  let out = g;
+  if (audioCtx.createStereoPanner) { const p = audioCtx.createStereoPanner(); p.pan.value = pan; g.connect(p); out = p; }
+  src.connect(filt).connect(g); out.connect(music.sparkle);
+  src.start(start); src.stop(start + dur + 0.05);
+}
+
+
+function scheduleCombatNoise(start, dur, vol) {
+  if (!music || !audioCtx) return;
+  const n = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2);
+  const src = audioCtx.createBufferSource(); src.buffer = buf;
+  const filt = audioCtx.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 520; filt.Q.value = 0.8;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(vol, start);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  src.connect(filt).connect(g).connect(music.pad);
+  src.start(start); src.stop(start + dur + 0.03);
+}
+
+
+function scheduleHeartbeatPhrase(start, root, gain) {
+  if (!music || !audioCtx || gain <= 0) return;
+  // Low "dö-dö-dömm-döm, dö dö dömm" phrase under the combat soundtrack.
+  const hits = [
+    [0.00, root, 0.10, 0.036], [0.12, root, 0.10, 0.030], [0.24, root * 0.75, 0.18, 0.050],
+    [0.42, root * 0.9, 0.13, 0.038], [0.68, root, 0.10, 0.030], [0.86, root, 0.10, 0.028],
+    [1.04, root * 0.75, 0.22, 0.052],
+  ];
+  for (const [delay, freq, dur, vol] of hits) scheduleMusicTone(freq, start + delay, dur, 'triangle', vol * gain, music.pad, 0, 0.68);
+}
+
+
+function scheduleFighterStep() {
+  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
+  const barStep = music.step % 16;
+  const chord = FIGHTER_PATTERN[Math.floor(barStep / 4) % FIGHTER_PATTERN.length];
+  const t = music.next;
+  const inCombat = typeof game !== 'undefined' && game.state === 'playing';
+  const urgency = inCombat ? roundProgress() : 0;
+  const step = currentMusicStep();
+  const bass = [chord.root * 0.5, chord.root * 0.5, chord.fifth * 0.5, chord.root * 0.75][barStep % 4];
+  scheduleMusicTone(bass, t, 0.16, 'square', 0.030 + urgency * 0.018, music.pad, -0.1, 0.78);
+  if (barStep % 2 === 1) scheduleCombatNoise(t + 0.03, 0.13, 0.016 + urgency * 0.012);
+  if (inCombat && barStep % 4 === 0) scheduleHeartbeatPhrase(t + 0.02, chord.root * 0.5, 0.26 + finalHeartbeat() * 0.9);
+  if ([1, 3].includes(barStep % 4)) {
+    const hook = [chord.top, chord.fifth * 1.5, chord.top * 0.75, chord.fifth][Math.floor(barStep / 4) % 4];
+    scheduleMusicTone(hook, t + step * 0.45, 0.18, 'triangle', 0.012 + urgency * 0.004, music.sparkle, 0.35, 0.94);
+  }
+  if (barStep % 8 === 0) {
+    scheduleMusicTone(chord.root, t, step * 7.5, 'sawtooth', 0.012, music.pad, -0.35, 1.002);
+    scheduleMusicTone(chord.fifth, t + 0.04, step * 7, 'triangle', 0.010, music.pad, 0.25, 0.998);
+  }
+  music.next += step;
+  music.step++;
+}
+
+
+function schedulePirateStep() {
+  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
+  const barStep = music.step % 24;
+  const chord = PIRATE_PATTERN[Math.floor(barStep / 6) % PIRATE_PATTERN.length];
+  const t = music.next;
+  const inCombat = typeof game !== 'undefined' && game.state === 'playing';
+  const urgency = inCombat ? roundProgress() : 0;
+  const step = currentMusicStep();
+  const beat = barStep % 6;
+  const drumGain = 0.020 + urgency * 0.014;
+  if ([0, 3].includes(beat)) scheduleMusicTone(chord.root * 0.5, t, 0.18, 'triangle', 0.036 + urgency * 0.016, music.pad, -0.12, 0.7);
+  if ([2, 5].includes(beat)) scheduleCombatNoise(t + 0.025, 0.12, drumGain);
+  const shanty = [chord.root, chord.fifth, chord.top, chord.fifth, chord.root * 1.5, chord.fifth][beat];
+  if (inCombat || [0, 3].includes(beat)) scheduleMusicTone(shanty, t + step * 0.28, 0.20, 'triangle', 0.014 + urgency * 0.004, music.sparkle, beat < 3 ? -0.28 : 0.28, 1.006);
+  if (barStep % 6 === 0) {
+    scheduleMusicTone(chord.root, t, step * 5.6, 'sawtooth', 0.012, music.pad, -0.25, 1.001);
+    scheduleMusicTone(chord.fifth, t + 0.06, step * 5.2, 'triangle', 0.010, music.pad, 0.22, 0.998);
+  }
+  if (inCombat && barStep % 12 === 0) scheduleHeartbeatPhrase(t + step * 0.15, chord.root * 0.5, 0.22 + finalHeartbeat() * 0.75);
+  music.next += step;
+  music.step++;
+}
+
+function scheduleMusicStep() {
+  if (soundtrackMode() === 'fighter') { scheduleFighterStep(); return; }
+  if (soundtrackMode() === 'pirate') { schedulePirateStep(); return; }
+  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
+  const barStep = music.step % 32;
+  const chord = MUSIC_PATTERN[Math.floor(barStep / 8) % MUSIC_PATTERN.length];
+  const t = music.next;
+  if (barStep % 8 === 0) {
+    scheduleMusicTone(chord.root, t, game.state === 'playing' ? 3.0 : 4.4, 'sine', 0.055, music.pad, -0.22, 1.004);
+    scheduleMusicTone(chord.fifth, t + 0.08, game.state === 'playing' ? 2.8 : 4.2, 'triangle', 0.034, music.pad, 0.18, 0.997);
+    scheduleMusicTone(chord.top, t + 0.18, game.state === 'playing' ? 2.5 : 3.8, 'sine', 0.022, music.pad, 0.38, 1.002);
+  }
+  const inCombat = typeof game !== 'undefined' && game.state === 'playing';
+  const urgency = inCombat ? roundProgress() : 0;
+  if (inCombat) {
+    const heartbeat = finalHeartbeat();
+    const pulse = chord.root * 0.5;
+    scheduleMusicTone(pulse, t, 0.20, 'triangle', 0.030 + urgency * 0.016, music.pad, -0.05, 0.72);
+    if (barStep % 2 === 1) scheduleCombatNoise(t + 0.04, 0.16, 0.018 + urgency * 0.010);
+    if (urgency > 0.65 && barStep % 2 === 0) scheduleMusicTone(chord.root, t + currentMusicStep() * 0.48, 0.12, 'triangle', 0.012, music.pad, 0.08, 0.86);
+    if (t >= (music.nextHeartbeat || 0)) {
+      scheduleHeartbeatPhrase(t, pulse, 0.34 + heartbeat * 1.1);
+      music.nextHeartbeat = t + 2.15 - heartbeat * 1.45;
+    }
+  }
+  if ([2, 5].includes(barStep % 8)) {
+    const note = [chord.root, chord.fifth, chord.top, chord.root * 2][Math.floor(Math.random() * 4)];
+    scheduleMusicTone(note, t + 0.03, inCombat ? 0.8 : 1.15, 'sine', inCombat ? 0.010 : 0.014, music.sparkle, Math.random() * 1.2 - 0.6, 1.01);
+  }
+  if (!inCombat && barStep % 4 === 3) scheduleMusicNoise(t + 0.12, 1.1, 0.014, Math.random() * 1.2 - 0.6);
+  if (inCombat && [1, 3, 6].includes(barStep % 8)) {
+    const driftNotes = [chord.root * 1.5, chord.fifth * 1.5, chord.top, chord.root * 2];
+    const drift = driftNotes[Math.floor(Math.random() * driftNotes.length)];
+    scheduleMusicTone(drift, t + 0.02, 0.50 - urgency * 0.12, 'sine', 0.008 + urgency * 0.003, music.sparkle, Math.random() * 1.4 - 0.7, 1.012);
+    if (urgency > 0.55) scheduleMusicTone(drift * 0.75, t + 0.16, 0.32, 'triangle', 0.005, music.sparkle, Math.random() * 1.2 - 0.6, 0.99);
+  }
+  music.next += currentMusicStep();
+  music.step++;
+}
+
+function updateSoundtrack() {
+  const target = musicLevel();
+  if (target <= 0 && !music) return;
+  if (!music) music = makeMusic();
+  if (!music || !audioCtx) return;
+  const t = audioCtx.currentTime;
+  music.master.gain.cancelScheduledValues(t);
+  music.master.gain.setTargetAtTime(target, t, target > 0 ? 0.8 : 0.25);
+  if (music.spaceWet) music.spaceWet.gain.setTargetAtTime(game.state === 'playing' ? 1 : 0, t, 0.35);
+  if (target > 0 && !music.running) {
+    music.running = true;
+    music.next = Math.max(music.next || t, t + 0.04);
+    while (music.next < audioCtx.currentTime + MUSIC_LOOKAHEAD) scheduleMusicStep();
+    music.timer = setInterval(() => {
+      if (!music || !audioCtx) return;
+      while (music.next < audioCtx.currentTime + MUSIC_LOOKAHEAD) scheduleMusicStep();
+    }, 80);
+  } else if (target <= 0 && music.running) {
+    music.running = false;
+    clearInterval(music.timer);
+    music.timer = null;
+    music.next = t + 0.2;
+  }
+}
+
+
+function setPageAudioMuted(on) {
+  pageAudioMuted = !!on;
+  updateSoundtrack();
+  if (!audioCtx) return;
+  if (pageAudioMuted) audioCtx.suspend().catch(() => {});
+  else if (!muted && audioVolume() > 0) audioCtx.resume().then(() => updateSoundtrack()).catch(() => {});
+}
+
+function blip(f0, f1, dur, type, vol, delay = 0, gain = 1) {
+  const v = vol * gain * audioVolume(activeAudioCategory);
+  if (muted || pageAudioMuted || v <= 0) return;
+  vol = v;
+  if (!ensureAudio()) return;
   const t = audioCtx.currentTime + delay;
   const o = audioCtx.createOscillator();
   const g = audioCtx.createGain();
@@ -32,12 +345,9 @@ function blip(f0, f1, dur, type, vol, delay = 0, gain = 1) {
 
 // Filtered white-noise burst — for whooshes, fire/wind/earth/ice breath, etc.
 function noise(dur, filterType, f0, f1, vol, delay = 0, gain = 1) {
-  const v = vol * gain * (game.opt && game.opt.volume !== undefined ? game.opt.volume : 1);
-  if (muted || v <= 0) return;
-  if (!audioCtx) {
-    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-    catch (e) { muted = true; return; }
-  }
+  const v = vol * gain * audioVolume(activeAudioCategory);
+  if (muted || pageAudioMuted || v <= 0) return;
+  if (!ensureAudio()) return;
   const t = audioCtx.currentTime + delay;
   const n = Math.floor(audioCtx.sampleRate * dur);
   const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
@@ -78,6 +388,7 @@ function spellSfx(id) {
   const key = 'sp:' + id;
   if (sfxLast[key] && now - sfxLast[key] < 45) return;
   sfxLast[key] = now;
+  return withAudioCategory('spell', () => {
   switch (id) {
     case 'missile': // three tiny particle-triangle chirps snapping into one dart
       arpeggio([1320, 1640, 1980], 'triangle', 0.014, 0.05, 0.03, SPELL_SFX_GAIN);
@@ -140,12 +451,14 @@ function spellSfx(id) {
     default:
       blip(700, 320, 0.08, 'triangle', 0.016, 0, SPELL_SFX_GAIN);
   }
+  });
 }
 
 function sfx(name) {
   const now = performance.now();
   if (sfxLast[name] && now - sfxLast[name] < 50) return; // throttle spam
   sfxLast[name] = now;
+  return withAudioCategory(MENU_SFX.has(name) ? 'menu' : 'spell', () => {
   switch (name) {
     case 'shoot':  blip(700, 320, 0.08, 'triangle', 0.016, 0, SPELL_SFX_GAIN); break;
     case 'hit':    blip(300, 150, 0.06, 'triangle', 0.04); break;
@@ -171,4 +484,5 @@ function sfx(name) {
     case 'death':  blip(300, 30, 0.6, 'sawtooth', 0.1); break;
     case 'win':    blip(523, 1046, 0.5, 'square', 0.06); break;
   }
+  });
 }
