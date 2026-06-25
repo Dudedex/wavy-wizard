@@ -2498,6 +2498,7 @@ const SOUNDTRACK_CHOICES = [
   { id: 'ambient', label: 'Ambient Wizard' },
   { id: 'fighter', label: 'Arcade Fighter' },
   { id: 'pirate', label: 'High Seas Adventure' },
+  { id: 'techno', label: 'Neon Techno' },
 ];
 
 function renderSettings() {

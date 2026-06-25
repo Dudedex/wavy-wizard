@@ -123,7 +123,7 @@ const SPELLS = {
   },
   // Breath spells: a ~90° cone toward the nearest enemy with an elemental aftermath.
   firebreath: {
-    name: 'Fire Breath', icon: '🔥', color: '#ff7a3a', breath: 'fire',
+    name: 'Fire Breath', icon: '♨️', color: '#ff7a3a', breath: 'fire',
     desc: 'Exhale a cone of flame that leaves the ground burning.',
     tiers: [
       { dmg: 16, cd: 0.72, range: 180, price: 20 },
