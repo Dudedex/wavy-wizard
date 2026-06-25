@@ -15,7 +15,8 @@ const MENU_SFX = new Set(['buy', 'shopBuy', 'shopSpell', 'shopFuse', 'shopReroll
 let music = null;
 let audioOut = null;
 const MUSIC_LOOKAHEAD = 0.18;
-const MUSIC_STEP = 0.34;        // one constant tempo everywhere — no speed-up
+const SMOOTH_STEP = 0.34;       // constant chill tempo — no speed-up
+const BREAKBEAT_STEP = 0.17;    // constant drum-and-bass tempo — no speed-up
 // "Moonlit Groove" — pure tonal synth pads, rounded bass, and sparse bell
 // accents. There are no soundtrack noise bursts or wave-clock tempo changes.
 const SMOOTH_PATTERN = [
@@ -35,6 +36,24 @@ const SMOOTH_MELODY = [
   null, 392.00, null, null,
   440.00, null, 587.33, null,
   554.37, null, 493.88, null,
+];
+const BREAKBEAT_PATTERN = [
+  { root: 55.00, fifth: 82.41, top: 220.00 },  // A
+  { root: 65.41, fifth: 98.00, top: 261.63 },  // C
+  { root: 49.00, fifth: 73.42, top: 196.00 },  // G
+  { root: 61.74, fifth: 92.50, top: 246.94 },  // B
+];
+const BREAKBEAT_BASS = [
+  55.00, null, 55.00, 82.41, null, 55.00, 110.00, null,
+  65.41, null, 98.00, null, 65.41, 130.81, null, 98.00,
+  49.00, null, 73.42, 98.00, null, 49.00, 98.00, null,
+  61.74, null, 92.50, null, 61.74, 123.47, null, 92.50,
+];
+const BREAKBEAT_STABS = [
+  null, null, 440.00, null, null, null, 392.00, null,
+  null, 523.25, null, null, 493.88, null, null, null,
+  null, null, 392.00, null, null, 440.00, null, null,
+  493.88, null, null, null, 554.37, null, 493.88, null,
 ];
 
 function ensureAudio(startMusic = true) {
@@ -62,7 +81,9 @@ function withAudioCategory(category, fn) {
   try { return fn(); } finally { activeAudioCategory = prev; }
 }
 
-function soundtrackMode() { return 'smooth'; } // only one soundtrack: Moonlit Groove
+function soundtrackMode() {
+  return typeof game !== 'undefined' && game.opt && game.opt.soundtrack === 'breakbeat' ? 'breakbeat' : 'smooth';
+}
 
 function getAudioOutput() {
   if (!audioCtx) return null;
@@ -127,7 +148,7 @@ function musicLevel() {
 }
 
 function currentMusicStep() {
-  return MUSIC_STEP;
+  return soundtrackMode() === 'breakbeat' ? BREAKBEAT_STEP : SMOOTH_STEP;
 }
 
 function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1) {
@@ -195,8 +216,50 @@ function scheduleSmoothStep() {
   music.step++;
 }
 
+function scheduleBreakbeatStep() {
+  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
+  const cycle = music.step % 32;
+  const chord = BREAKBEAT_PATTERN[Math.floor(cycle / 8) % BREAKBEAT_PATTERN.length];
+  const t = music.next;
+  const step = currentMusicStep();
+  const beat = cycle % 8;
+
+  if (cycle % 8 === 0) {
+    const padDur = step * 9.4;
+    scheduleMusicTone(chord.root * 2, t, padDur, 'triangle', 0.0048, music.pad, -0.22, 1.001);
+    scheduleMusicTone(chord.fifth * 2, t + 0.03, padDur, 'triangle', 0.0038, music.pad, 0.18, 0.999);
+    scheduleMusicTone(chord.top, t + 0.06, padDur, 'sine', 0.0034, music.pad, 0.34, 1.001);
+  }
+
+  const bass = BREAKBEAT_BASS[cycle];
+  if (bass) {
+    scheduleMusicTone(bass, t, step * 1.18, 'sine', 0.034, music.pad, -0.10, 0.996);
+    scheduleMusicTone(bass * 2, t + step * 0.03, step * 0.72, 'triangle', 0.0075, music.pad, 0.04, 1.001);
+  }
+
+  // Drum-and-bass feel without noisy samples: tonal kick/snare/hat shapes with
+  // soft envelopes so the groove is punchier but still click-free.
+  if (cycle % 16 === 0 || cycle % 16 === 10) {
+    scheduleMusicTone(88, t, step * 0.9, 'sine', 0.030, music.pad, -0.02, 0.42);
+  }
+  if (cycle % 16 === 4 || cycle % 16 === 12) {
+    scheduleMusicTone(185, t + step * 0.02, step * 0.62, 'triangle', 0.014, music.sparkle, 0.08, 0.78);
+    scheduleMusicTone(740, t + step * 0.03, step * 0.38, 'sine', 0.0048, music.sparkle, -0.12, 1.05);
+  }
+  if (beat % 2 === 1) {
+    scheduleMusicTone(1760, t + step * 0.06, step * 0.42, 'sine', 0.0024, music.sparkle, beat === 1 || beat === 5 ? -0.28 : 0.28, 1.01);
+  }
+
+  const stab = BREAKBEAT_STABS[cycle];
+  if (stab) scheduleMusicTone(stab, t + step * 0.08, step * 0.85, 'triangle', 0.0052, music.sparkle, 0.18, 1.0);
+
+  music.next += step;
+  music.step++;
+}
+
 function scheduleMusicStep() {
-  scheduleSmoothStep();
+  if (soundtrackMode() === 'breakbeat') scheduleBreakbeatStep();
+  else scheduleSmoothStep();
 }
 
 function updateSoundtrack() {
