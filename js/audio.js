@@ -15,23 +15,28 @@ const MENU_SFX = new Set(['buy', 'shopBuy', 'shopSpell', 'shopFuse', 'shopReroll
 let music = null;
 let audioOut = null;
 const MUSIC_LOOKAHEAD = 0.18;
-const MUSIC_MENU_STEP = 0.5;   // relaxed tempo in menus
-const ARCANE_STEP = 0.26;      // steady combat tempo — the base soundtrack never speeds up
-// "Arcane Battle" — a dramatic minor progression (Am · G · F · E) for the wizard
-// arena: driving bass + four-on-the-floor under a memorable arcane lead, with a
-// harmonic-minor G# leading tone before the loop for tension.
-const ARCANE_PATTERN = [
-  { root: 110.00, fifth: 164.81, top: 329.63 }, // Am
+const MUSIC_MENU_STEP = 0.56;   // relaxed tempo in menus
+const SMOOTH_STEP = 0.30;       // steady, laid-back groove during play
+// "Moonlit Groove" — a new smooth synth soundtrack with warm sustained chords,
+// a rounded sub-bass line, and sparse bell accents. It has no timer-driven
+// acceleration: the track should loop calmly and keep its bass pocket.
+const SMOOTH_PATTERN = [
+  { root: 123.47, fifth: 185.00, top: 369.99 }, // Bm
   { root: 98.00,  fifth: 146.83, top: 392.00 }, // G
-  { root: 87.31,  fifth: 130.81, top: 349.23 }, // F
-  { root: 82.41,  fifth: 123.47, top: 329.63 }, // E (→ G# leading tone in the lead)
+  { root: 146.83, fifth: 220.00, top: 440.00 }, // D
+  { root: 110.00, fifth: 164.81, top: 329.63 }, // A
 ];
-// 16-step lead hook (one note per step, null = rest) over the 4-bar progression.
-const ARCANE_MELODY = [
-  440.00, null,   523.25, 659.25, // Am:  A · · C  E
-  587.33, 523.25, 493.88, null,   // G:   D  C  B ·
-  523.25, 440.00, 349.23, null,   // F:   C  A  F ·
-  415.30, 493.88, 659.25, 587.33, // E:   G# B  E  D  (resolves back to A)
+const SMOOTH_BASS = [
+  61.74, null, 73.42, 61.74,
+  49.00, null, 73.42, 49.00,
+  73.42, null, 110.00, 73.42,
+  55.00, null, 82.41, 55.00,
+];
+const SMOOTH_MELODY = [
+  493.88, null, null, 440.00,
+  null, 392.00, null, null,
+  440.00, null, 587.33, null,
+  554.37, null, 493.88, null,
 ];
 
 function ensureAudio(startMusic = true) {
@@ -59,7 +64,7 @@ function withAudioCategory(category, fn) {
   try { return fn(); } finally { activeAudioCategory = prev; }
 }
 
-function soundtrackMode() { return 'arcane'; } // only one soundtrack: Arcane Battle
+function soundtrackMode() { return 'smooth'; } // only one soundtrack: Moonlit Groove
 
 function getAudioOutput() {
   if (!audioCtx) return null;
@@ -115,7 +120,7 @@ function makeMusic() {
     master.connect(comp); tail = comp;
   }
   tail.connect(getAudioOutput());
-  return { master, pad, sparkle, spaceWet, timer: null, next: audioCtx.currentTime, nextHeartbeat: 0, step: 0, running: false };
+  return { master, pad, sparkle, spaceWet, timer: null, next: audioCtx.currentTime, step: 0, running: false };
 }
 
 function musicLevel() {
@@ -133,27 +138,9 @@ function roundProgress() {
   return Math.max(0, Math.min(1, (game.waveTime || 0) / Math.max(1, dur)));
 }
 
-function roundRemaining() {
-  if (typeof game === 'undefined' || game.state !== 'playing' || !Number.isFinite(game.waveDur)) return Infinity;
-  return Math.max(0, game.waveDur - (game.waveTime || 0));
-}
-
-function finalHeartbeat() {
-  const left = roundRemaining();
-  return left <= 10 ? 1 - left / 10 : 0;
-}
-
 function currentMusicStep() {
-  // Constant tempo: the base soundtrack never speeds up — only the heartbeat does.
   if (typeof game === 'undefined' || game.state !== 'playing') return MUSIC_MENU_STEP;
-  return ARCANE_STEP;
-}
-
-// The heartbeat is the only thing that accelerates: its interval shrinks as the
-// wave progresses, then races in the final 10 seconds.
-function heartbeatInterval() {
-  const iv = 1.15 - roundProgress() * 0.5 - finalHeartbeat() * 0.45;
-  return Math.max(0.34, iv);
+  return SMOOTH_STEP;
 }
 
 function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1) {
@@ -222,20 +209,6 @@ function scheduleCombatNoise(start, dur, vol) {
 }
 
 
-// A single kick-drum thud (pitched-down sine + lowpassed noise body).
-function heartKick(start, vol) {
-  if (!music || !audioCtx) return;
-  scheduleMusicTone(95, start, 0.20, 'sine', vol, music.pad, 0, 0.42);
-  scheduleCombatNoise(start + 0.004, 0.07, vol * 0.55);
-}
-
-// A real "lub-dub" heartbeat drum (replaces the old tonal phrase).
-function scheduleHeartbeatPhrase(start, root, gain) {
-  if (!music || !audioCtx || gain <= 0) return;
-  heartKick(start, 0.062 * gain);          // lub
-  heartKick(start + 0.17, 0.046 * gain);   // dub
-}
-
 function scheduleTechnoHat(start, dur, vol, pan = 0) {
   if (!music || !audioCtx) return;
   const n = Math.floor(audioCtx.sampleRate * dur);
@@ -254,61 +227,48 @@ function scheduleTechnoHat(start, dur, vol, pan = 0) {
   src.start(start); src.stop(start + dur + 0.02);
 }
 
-// "Arcane Battle": melodic minor battle theme — sustained pad, driving bass,
-// four-on-the-floor percussion, and a recognizable arcane lead hook that all
-// intensify as the wave clock runs down.
-function scheduleArcaneStep() {
+// "Moonlit Groove": smooth synth pads, a rounded bass pocket, soft percussion,
+// and sparse bell accents. It deliberately has no wave-clock acceleration, so
+// the loop remains cool and even from start to finish.
+function scheduleSmoothStep() {
   if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
   const cycle = music.step % 16;
-  const chord = ARCANE_PATTERN[Math.floor(cycle / 4) % ARCANE_PATTERN.length];
+  const chord = SMOOTH_PATTERN[Math.floor(cycle / 4) % SMOOTH_PATTERN.length];
   const t = music.next;
   const inCombat = typeof game !== 'undefined' && game.state === 'playing';
-  const urgency = inCombat ? roundProgress() : 0;
+  const glow = inCombat ? 0.75 + roundProgress() * 0.12 : 0.58;
   const step = currentMusicStep();
   const beat = cycle % 4;
 
-  // sustained chord pad at the head of each bar — runs LONGER than the bar so it
-  // overlaps (crossfades into) the next bar's pad, removing the per-loop seam.
+  // Long overlapping pads keep the progression smooth over both bar and loop
+  // boundaries. Slight detune bends add movement without making the loop obvious.
   if (beat === 0) {
-    const padDur = step * 5.2; // bar = 4 steps; ~1.2 steps of overlap for a seamless join
-    scheduleMusicTone(chord.root, t, padDur, 'triangle', 0.013 + urgency * 0.004, music.pad, -0.28, 1.001);
-    scheduleMusicTone(chord.fifth, t + 0.03, padDur, 'triangle', 0.010, music.pad, 0.22, 0.999);
-    scheduleMusicTone(chord.top, t + 0.06, padDur, 'sine', 0.0075, music.pad, 0.4, 1.002);
+    const padDur = step * 5.6;
+    scheduleMusicTone(chord.root, t, padDur, 'triangle', 0.010 * glow, music.pad, -0.34, 1.0015);
+    scheduleMusicTone(chord.fifth, t + 0.04, padDur, 'triangle', 0.008 * glow, music.pad, 0.18, 0.9985);
+    scheduleMusicTone(chord.top, t + 0.08, padDur, 'sine', 0.006 * glow, music.pad, 0.38, 1.002);
   }
 
-  // driving bass: smooth triangle root each step, soft octave push on the offbeat
-  scheduleMusicTone(chord.root * 0.5, t, step * 0.95, 'triangle', 0.026 + urgency * 0.010, music.pad, -0.08, 1.0);
-  if (inCombat) scheduleMusicTone(chord.root, t + step * 0.5, step * 0.5, 'sine', 0.009 + urgency * 0.007, music.pad, 0.06, 1.0);
-
-  // percussion: kick body on each beat, bright backbeat on beat 2, hats while fighting
-  scheduleCombatNoise(t + 0.008, 0.06, 0.011 + urgency * 0.008);
-  if (beat === 2) scheduleMusicNoise(t + 0.01, 0.12, 0.008 + urgency * 0.008, 0.05);
-  if (inCombat) {
-    scheduleTechnoHat(t + step * 0.5, 0.04, 0.006 + urgency * 0.004, beat % 2 ? 0.3 : -0.3);
-    if (urgency > 0.4 && beat % 2 === 1) scheduleTechnoHat(t + step * 0.25, 0.03, 0.0035 + urgency * 0.003, Math.random() - 0.5);
+  // Warm sub-bass groove. A tiny overlapping octave layer gives body, but stays
+  // filtered and quiet enough to avoid clipping when spell sounds are active.
+  const bass = SMOOTH_BASS[cycle];
+  if (bass) {
+    scheduleMusicTone(bass, t, step * 0.94, 'sine', 0.032 * glow, music.pad, -0.08, 0.997);
+    if (inCombat && beat !== 1) scheduleMusicTone(bass * 2, t + step * 0.03, step * 0.62, 'triangle', 0.007 * glow, music.pad, 0.04, 1.001);
   }
 
-  // the arcane lead hook — the recognizable melody (plays softer in menus)
-  const mel = ARCANE_MELODY[cycle];
+  // Soft groove percussion: low thump on downbeats, light hats on offbeats, and
+  // an occasional airy sweep to glue the loop together.
+  if (beat === 0 || beat === 2) scheduleCombatNoise(t + 0.01, 0.09, 0.008 * glow);
+  if (inCombat) scheduleTechnoHat(t + step * 0.5, 0.045, 0.0035 * glow, beat % 2 ? 0.28 : -0.28);
+  if (cycle === 14) scheduleMusicNoise(t + step * 0.35, step * 0.9, 0.0045 * glow, 0.12);
+
+  // Sparse, smooth melody accents; the final note leaves space for the first bell
+  // of the next cycle, creating a calm repeat instead of an obvious restart.
+  const mel = SMOOTH_MELODY[cycle];
   if (mel) {
-    const leadVol = (inCombat ? 0.012 : 0.008) + urgency * 0.004;
-    scheduleMusicTone(mel, t + step * 0.04, step * 0.92, 'triangle', leadVol, music.sparkle, 0.0, 1.0);
-    scheduleMusicTone(mel * 2, t + step * 0.05, step * 0.5, 'sine', leadVol * 0.4, music.sparkle, 0.25, 1.0);
-  }
-
-  // On the last step, add a quiet pickup that resolves into the next cycle. It
-  // masks the 16-step boundary without changing tempo, making the soundtrack feel
-  // like one continuous loop instead of a restarted phrase.
-  if (cycle === 15) {
-    scheduleMusicTone(415.30, t + step * 0.55, step * 0.42, 'sine', 0.006 + urgency * 0.0025, music.sparkle, -0.16, 1.006);
-    scheduleMusicTone(493.88, t + step * 0.78, step * 0.26, 'triangle', 0.0045 + urgency * 0.002, music.sparkle, 0.18, 1.004);
-  }
-
-  // heartbeat drum on its OWN accelerating cadence (the base tempo stays constant);
-  // it quickens as the wave runs down and races in the final 10 seconds.
-  if (inCombat && t >= (music.nextHeartbeat || 0)) {
-    scheduleHeartbeatPhrase(t, chord.root * 0.5, 0.55 + finalHeartbeat() * 0.6);
-    music.nextHeartbeat = t + heartbeatInterval();
+    scheduleMusicTone(mel, t + step * 0.08, step * 1.15, 'sine', 0.008 * glow, music.sparkle, 0.05, 1.0);
+    scheduleMusicTone(mel * 0.5, t + step * 0.1, step * 0.9, 'triangle', 0.0035 * glow, music.sparkle, -0.22, 1.002);
   }
 
   music.next += step;
@@ -316,7 +276,7 @@ function scheduleArcaneStep() {
 }
 
 function scheduleMusicStep() {
-  scheduleArcaneStep(); // the only soundtrack
+  scheduleSmoothStep(); // the only soundtrack
 }
 
 function updateSoundtrack() {

@@ -2494,8 +2494,8 @@ const SETTINGS = [
   { key: 'dmgNumbers', label: 'Floating damage numbers', invert: true },
 ];
 
-// Only one soundtrack remains (Arcane Battle); the picker was removed from Settings.
-const SOUNDTRACK_CHOICES = [{ id: 'arcane', label: 'Arcane Battle' }];
+// Only one soundtrack remains (Moonlit Groove); the picker was removed from Settings.
+const SOUNDTRACK_CHOICES = [{ id: 'smooth', label: 'Moonlit Groove' }];
 
 function renderSettings() {
   const el = document.getElementById('settings-list');
