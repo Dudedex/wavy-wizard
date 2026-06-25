@@ -486,7 +486,7 @@ function renderShop() {
     const btn = document.createElement('button');
     btn.className = 'buy-btn';
     const noSlot = offer.kind === 'spell' && p.spells.length >= slotCap();
-    btn.textContent = noSlot ? 'Spellbook full' : `Buy — ${price}g`;
+    btn.textContent = noSlot ? `Spellbook full (${price}g)` : `Buy — ${price}g`;
     btn.disabled = game.gold < price || noSlot;
     btn.onclick = () => buyOffer(idx);
     card.appendChild(btn);

@@ -14,33 +14,23 @@ const MENU_SFX = new Set(['buy', 'shopBuy', 'shopSpell', 'shopFuse', 'shopReroll
 
 let music = null;
 const MUSIC_LOOKAHEAD = 0.18;
-const MUSIC_MENU_STEP = 0.5;
-const MUSIC_GAME_START_STEP = 0.44;
-const MUSIC_GAME_END_STEP = 0.18;
-const MUSIC_HEARTBEAT_END_STEP = 0.12;
-const MUSIC_PATTERN = [
-  { root: 146.83, fifth: 220.00, top: 369.99 }, // Dm9-ish
-  { root: 130.81, fifth: 196.00, top: 329.63 }, // Cmaj7-ish
-  { root: 174.61, fifth: 261.63, top: 440.00 }, // Fmaj9-ish
-  { root: 110.00, fifth: 164.81, top: 293.66 }, // Am11-ish
+const MUSIC_MENU_STEP = 0.5;   // relaxed tempo in menus
+const ARCANE_STEP = 0.26;      // steady combat tempo — the base soundtrack never speeds up
+// "Arcane Battle" — a dramatic minor progression (Am · G · F · E) for the wizard
+// arena: driving bass + four-on-the-floor under a memorable arcane lead, with a
+// harmonic-minor G# leading tone before the loop for tension.
+const ARCANE_PATTERN = [
+  { root: 110.00, fifth: 164.81, top: 329.63 }, // Am
+  { root: 98.00,  fifth: 146.83, top: 392.00 }, // G
+  { root: 87.31,  fifth: 130.81, top: 349.23 }, // F
+  { root: 82.41,  fifth: 123.47, top: 329.63 }, // E (→ G# leading tone in the lead)
 ];
-const FIGHTER_PATTERN = [
-  { root: 98.00, fifth: 146.83, top: 293.66 },
-  { root: 116.54, fifth: 174.61, top: 349.23 },
-  { root: 87.31, fifth: 130.81, top: 261.63 },
-  { root: 130.81, fifth: 196.00, top: 392.00 },
-];
-const PIRATE_PATTERN = [
-  { root: 146.83, fifth: 220.00, top: 293.66 }, // Dm
-  { root: 130.81, fifth: 196.00, top: 261.63 }, // C
-  { root: 116.54, fifth: 174.61, top: 233.08 }, // Bb
-  { root: 110.00, fifth: 164.81, top: 220.00 }, // A
-];
-const TECHNO_PATTERN = [
-  { root: 110.00, fifth: 164.81, top: 440.00 }, // A minor pulse
-  { root: 130.81, fifth: 196.00, top: 523.25 }, // C lift
-  { root: 98.00, fifth: 146.83, top: 392.00 },  // G pressure
-  { root: 146.83, fifth: 220.00, top: 587.33 }, // Dm release
+// 16-step lead hook (one note per step, null = rest) over the 4-bar progression.
+const ARCANE_MELODY = [
+  440.00, null,   523.25, 659.25, // Am:  A · · C  E
+  587.33, 523.25, 493.88, null,   // G:   D  C  B ·
+  523.25, 440.00, 349.23, null,   // F:   C  A  F ·
+  415.30, 493.88, 659.25, 587.33, // E:   G# B  E  D  (resolves back to A)
 ];
 
 function ensureAudio(startMusic = true) {
@@ -68,13 +58,7 @@ function withAudioCategory(category, fn) {
   try { return fn(); } finally { activeAudioCategory = prev; }
 }
 
-function soundtrackMode() {
-  if (typeof game === 'undefined' || !game.opt) return 'ambient';
-  if (game.opt.soundtrack === 'fighter') return 'fighter';
-  if (game.opt.soundtrack === 'pirate') return 'pirate';
-  if (game.opt.soundtrack === 'techno') return 'techno';
-  return 'ambient';
-}
+function soundtrackMode() { return 'arcane'; } // only one soundtrack: Arcane Battle
 
 function makeMusic() {
   if (!ensureAudio(false)) return null;
@@ -99,7 +83,16 @@ function makeMusic() {
   spaceDelay.connect(delayFeedback).connect(spaceDelay);
   spaceDelay.connect(spaceWet).connect(master);
   master.gain.value = 0;
-  master.connect(audioCtx.destination);
+  // soft limiter on the music bus: tames peaks when many voices stack so the mix
+  // never clips into harsh digital crackle
+  let tail = master;
+  if (audioCtx.createDynamicsCompressor) {
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.knee.value = 24; comp.ratio.value = 4;
+    comp.attack.value = 0.006; comp.release.value = 0.18;
+    master.connect(comp); tail = comp;
+  }
+  tail.connect(audioCtx.destination);
   return { master, pad, sparkle, spaceWet, timer: null, next: audioCtx.currentTime, nextHeartbeat: 0, step: 0, running: false };
 }
 
@@ -129,27 +122,34 @@ function finalHeartbeat() {
 }
 
 function currentMusicStep() {
+  // Constant tempo: the base soundtrack never speeds up — only the heartbeat does.
   if (typeof game === 'undefined' || game.state !== 'playing') return MUSIC_MENU_STEP;
-  // Ease out so combat tempo ramps noticeably earlier instead of saving the
-  // speed-up for only the final seconds.
-  const rush = Math.sqrt(roundProgress());
-  const mode = soundtrackMode();
-  const endStep = mode === 'fighter' ? 0.14 : mode === 'pirate' ? 0.16 : mode === 'techno' ? 0.125 : MUSIC_GAME_END_STEP;
-  const startStep = mode === 'fighter' ? 0.32 : mode === 'pirate' ? 0.38 : mode === 'techno' ? 0.25 : MUSIC_GAME_START_STEP;
-  const combatStep = startStep + (endStep - startStep) * rush;
-  return combatStep + (MUSIC_HEARTBEAT_END_STEP - combatStep) * finalHeartbeat();
+  return ARCANE_STEP;
+}
+
+// The heartbeat is the only thing that accelerates: its interval shrinks as the
+// wave progresses, then races in the final 10 seconds.
+function heartbeatInterval() {
+  const iv = 1.15 - roundProgress() * 0.5 - finalHeartbeat() * 0.45;
+  return Math.max(0.34, iv);
 }
 
 function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1) {
-  if (!music || !audioCtx) return;
+  if (!music || !audioCtx || !(vol > 0)) return; // exp envelope needs a positive target
   const osc = audioCtx.createOscillator();
   const g = audioCtx.createGain();
   osc.type = type;
   osc.frequency.setValueAtTime(freq, start);
   if (bend !== 1) osc.frequency.exponentialRampToValueAtTime(Math.max(20, freq * bend), start + dur);
+  // Smooth, click-free envelope that scales to the note length: gentle exponential
+  // attack & release (no hard value steps), so short notes don't pop and long pads
+  // fade cleanly. Longer notes get a longer, softer attack/release.
+  const atk = Math.min(0.5, Math.max(0.012, dur * 0.35));
+  const rel = Math.min(1.2, Math.max(0.06, dur * 0.5));
+  const sustainAt = start + Math.max(atk, dur - rel);
   g.gain.setValueAtTime(0.0001, start);
-  g.gain.linearRampToValueAtTime(vol, start + 0.25);
-  g.gain.setValueAtTime(vol, start + Math.max(0.26, dur - 0.7));
+  g.gain.exponentialRampToValueAtTime(vol, start + atk);
+  g.gain.setValueAtTime(vol, sustainAt);
   g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
   let out = g;
   if (audioCtx.createStereoPanner) {
@@ -191,71 +191,27 @@ function scheduleCombatNoise(start, dur, vol) {
   const src = audioCtx.createBufferSource(); src.buffer = buf;
   const filt = audioCtx.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 520; filt.Q.value = 0.8;
   const g = audioCtx.createGain();
-  g.gain.setValueAtTime(vol, start);
+  // soft 3ms attack instead of an instant jump → no onset click ("GSM buzz")
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), start + 0.003);
   g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
   src.connect(filt).connect(g).connect(music.pad);
   src.start(start); src.stop(start + dur + 0.03);
 }
 
 
+// A single kick-drum thud (pitched-down sine + lowpassed noise body).
+function heartKick(start, vol) {
+  if (!music || !audioCtx) return;
+  scheduleMusicTone(95, start, 0.20, 'sine', vol, music.pad, 0, 0.42);
+  scheduleCombatNoise(start + 0.004, 0.07, vol * 0.55);
+}
+
+// A real "lub-dub" heartbeat drum (replaces the old tonal phrase).
 function scheduleHeartbeatPhrase(start, root, gain) {
   if (!music || !audioCtx || gain <= 0) return;
-  // Low "dö-dö-dömm-döm, dö dö dömm" phrase under the combat soundtrack.
-  const hits = [
-    [0.00, root, 0.10, 0.036], [0.12, root, 0.10, 0.030], [0.24, root * 0.75, 0.18, 0.050],
-    [0.42, root * 0.9, 0.13, 0.038], [0.68, root, 0.10, 0.030], [0.86, root, 0.10, 0.028],
-    [1.04, root * 0.75, 0.22, 0.052],
-  ];
-  for (const [delay, freq, dur, vol] of hits) scheduleMusicTone(freq, start + delay, dur, 'triangle', vol * gain, music.pad, 0, 0.68);
-}
-
-
-function scheduleFighterStep() {
-  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
-  const barStep = music.step % 16;
-  const chord = FIGHTER_PATTERN[Math.floor(barStep / 4) % FIGHTER_PATTERN.length];
-  const t = music.next;
-  const inCombat = typeof game !== 'undefined' && game.state === 'playing';
-  const urgency = inCombat ? roundProgress() : 0;
-  const step = currentMusicStep();
-  const bass = [chord.root * 0.5, chord.root * 0.5, chord.fifth * 0.5, chord.root * 0.75][barStep % 4];
-  scheduleMusicTone(bass, t, 0.16, 'square', 0.030 + urgency * 0.018, music.pad, -0.1, 0.78);
-  if (barStep % 2 === 1) scheduleCombatNoise(t + 0.03, 0.13, 0.016 + urgency * 0.012);
-  if (inCombat && barStep % 4 === 0) scheduleHeartbeatPhrase(t + 0.02, chord.root * 0.5, 0.26 + finalHeartbeat() * 0.9);
-  if ([1, 3].includes(barStep % 4)) {
-    const hook = [chord.top, chord.fifth * 1.5, chord.top * 0.75, chord.fifth][Math.floor(barStep / 4) % 4];
-    scheduleMusicTone(hook, t + step * 0.45, 0.18, 'triangle', 0.012 + urgency * 0.004, music.sparkle, 0.35, 0.94);
-  }
-  if (barStep % 8 === 0) {
-    scheduleMusicTone(chord.root, t, step * 7.5, 'sawtooth', 0.012, music.pad, -0.35, 1.002);
-    scheduleMusicTone(chord.fifth, t + 0.04, step * 7, 'triangle', 0.010, music.pad, 0.25, 0.998);
-  }
-  music.next += step;
-  music.step++;
-}
-
-
-function schedulePirateStep() {
-  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
-  const barStep = music.step % 24;
-  const chord = PIRATE_PATTERN[Math.floor(barStep / 6) % PIRATE_PATTERN.length];
-  const t = music.next;
-  const inCombat = typeof game !== 'undefined' && game.state === 'playing';
-  const urgency = inCombat ? roundProgress() : 0;
-  const step = currentMusicStep();
-  const beat = barStep % 6;
-  const drumGain = 0.020 + urgency * 0.014;
-  if ([0, 3].includes(beat)) scheduleMusicTone(chord.root * 0.5, t, 0.18, 'triangle', 0.036 + urgency * 0.016, music.pad, -0.12, 0.7);
-  if ([2, 5].includes(beat)) scheduleCombatNoise(t + 0.025, 0.12, drumGain);
-  const shanty = [chord.root, chord.fifth, chord.top, chord.fifth, chord.root * 1.5, chord.fifth][beat];
-  if (inCombat || [0, 3].includes(beat)) scheduleMusicTone(shanty, t + step * 0.28, 0.20, 'triangle', 0.014 + urgency * 0.004, music.sparkle, beat < 3 ? -0.28 : 0.28, 1.006);
-  if (barStep % 6 === 0) {
-    scheduleMusicTone(chord.root, t, step * 5.6, 'sawtooth', 0.012, music.pad, -0.25, 1.001);
-    scheduleMusicTone(chord.fifth, t + 0.06, step * 5.2, 'triangle', 0.010, music.pad, 0.22, 0.998);
-  }
-  if (inCombat && barStep % 12 === 0) scheduleHeartbeatPhrase(t + step * 0.15, chord.root * 0.5, 0.22 + finalHeartbeat() * 0.75);
-  music.next += step;
-  music.step++;
+  heartKick(start, 0.062 * gain);          // lub
+  heartKick(start + 0.17, 0.046 * gain);   // dub
 }
 
 function scheduleTechnoHat(start, dur, vol, pan = 0) {
@@ -267,7 +223,8 @@ function scheduleTechnoHat(start, dur, vol, pan = 0) {
   const src = audioCtx.createBufferSource(); src.buffer = buf;
   const filt = audioCtx.createBiquadFilter(); filt.type = 'highpass'; filt.frequency.value = 5200; filt.Q.value = 0.8;
   const g = audioCtx.createGain();
-  g.gain.setValueAtTime(vol, start);
+  g.gain.setValueAtTime(0.0001, start);           // 2ms attack → no high-freq click
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), start + 0.002);
   g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
   let out = g;
   if (audioCtx.createStereoPanner) { const p = audioCtx.createStereoPanner(); p.pan.value = pan; g.connect(p); out = p; }
@@ -275,81 +232,61 @@ function scheduleTechnoHat(start, dur, vol, pan = 0) {
   src.start(start); src.stop(start + dur + 0.02);
 }
 
-function scheduleTechnoStep() {
+// "Arcane Battle": melodic minor battle theme — sustained pad, driving bass,
+// four-on-the-floor percussion, and a recognizable arcane lead hook that all
+// intensify as the wave clock runs down.
+function scheduleArcaneStep() {
   if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
-  const barStep = music.step % 32;
-  const chord = TECHNO_PATTERN[Math.floor(barStep / 8) % TECHNO_PATTERN.length];
+  const cycle = music.step % 16;
+  const chord = ARCANE_PATTERN[Math.floor(cycle / 4) % ARCANE_PATTERN.length];
   const t = music.next;
   const inCombat = typeof game !== 'undefined' && game.state === 'playing';
   const urgency = inCombat ? roundProgress() : 0;
   const step = currentMusicStep();
-  const beat = barStep % 4;
-  const cutoffBend = 0.58 + urgency * 0.16;
+  const beat = cycle % 4;
 
-  // Four-on-the-floor synth kick with a rubbery offbeat bass stab.
+  // sustained chord pad at the head of each bar — runs LONGER than the bar so it
+  // overlaps (crossfades into) the next bar's pad, removing the per-loop seam.
   if (beat === 0) {
-    scheduleMusicTone(chord.root * 0.5, t, 0.18, 'sine', 0.050 + urgency * 0.018, music.pad, -0.05, 0.42);
-    scheduleCombatNoise(t + 0.012, 0.055, 0.018 + urgency * 0.01);
+    const padDur = step * 5.2; // bar = 4 steps; ~1.2 steps of overlap for a seamless join
+    scheduleMusicTone(chord.root, t, padDur, 'triangle', 0.016 + urgency * 0.005, music.pad, -0.28, 1.001);
+    scheduleMusicTone(chord.fifth, t + 0.03, padDur, 'triangle', 0.012, music.pad, 0.22, 0.999);
+    scheduleMusicTone(chord.top, t + 0.06, padDur, 'sine', 0.009, music.pad, 0.4, 1.002);
   }
-  if (beat === 2) scheduleCombatNoise(t + 0.018, 0.10, 0.014 + urgency * 0.008);
-  if (beat === 1 || beat === 3) scheduleMusicTone(chord.fifth * 0.5, t + step * 0.18, 0.12, 'square', 0.024 + urgency * 0.010, music.pad, 0.10, cutoffBend);
 
-  scheduleTechnoHat(t + step * 0.48, 0.045, 0.010 + urgency * 0.006, beat % 2 ? 0.35 : -0.35);
-  if (inCombat && barStep % 2 === 1) scheduleTechnoHat(t + step * 0.18, 0.035, 0.006 + urgency * 0.004, Math.random() * 1.0 - 0.5);
+  // driving bass: smooth triangle root each step, soft octave push on the offbeat
+  scheduleMusicTone(chord.root * 0.5, t, step * 0.95, 'triangle', 0.034 + urgency * 0.016, music.pad, -0.08, 1.0);
+  if (inCombat) scheduleMusicTone(chord.root, t + step * 0.5, step * 0.5, 'sine', 0.012 + urgency * 0.010, music.pad, 0.06, 1.0);
 
-  if (barStep % 8 === 0) {
-    scheduleMusicTone(chord.root, t, step * 7.6, 'sawtooth', 0.015, music.pad, -0.28, 1.001);
-    scheduleMusicTone(chord.fifth, t + 0.025, step * 7.4, 'triangle', 0.010, music.pad, 0.24, 0.999);
+  // percussion: kick body on each beat, bright backbeat on beat 2, hats while fighting
+  scheduleCombatNoise(t + 0.008, 0.06, 0.015 + urgency * 0.012);
+  if (beat === 2) scheduleMusicNoise(t + 0.01, 0.12, 0.011 + urgency * 0.012, 0.05);
+  if (inCombat) {
+    scheduleTechnoHat(t + step * 0.5, 0.04, 0.008 + urgency * 0.006, beat % 2 ? 0.3 : -0.3);
+    if (urgency > 0.4 && beat % 2 === 1) scheduleTechnoHat(t + step * 0.25, 0.03, 0.005 + urgency * 0.004, Math.random() - 0.5);
   }
-  if ([3, 7].includes(barStep % 8)) {
-    const riff = [chord.top, chord.top * 0.75, chord.fifth * 2, chord.top * 1.125][Math.floor(barStep / 8) % 4];
-    scheduleMusicTone(riff, t + step * 0.25, 0.10, 'square', 0.010 + urgency * 0.005, music.sparkle, 0.42, 1.012);
+
+  // the arcane lead hook — the recognizable melody (plays softer in menus)
+  const mel = ARCANE_MELODY[cycle];
+  if (mel) {
+    const leadVol = (inCombat ? 0.016 : 0.010) + urgency * 0.006;
+    scheduleMusicTone(mel, t + step * 0.04, step * 0.92, 'triangle', leadVol, music.sparkle, 0.0, 1.0);
+    scheduleMusicTone(mel * 2, t + step * 0.05, step * 0.5, 'sine', leadVol * 0.4, music.sparkle, 0.25, 1.0);
   }
-  if (inCombat && barStep % 16 === 0) scheduleHeartbeatPhrase(t + step * 0.08, chord.root * 0.5, 0.18 + finalHeartbeat() * 0.65);
+
+  // heartbeat drum on its OWN accelerating cadence (the base tempo stays constant);
+  // it quickens as the wave runs down and races in the final 10 seconds.
+  if (inCombat && t >= (music.nextHeartbeat || 0)) {
+    scheduleHeartbeatPhrase(t, chord.root * 0.5, 0.55 + finalHeartbeat() * 0.6);
+    music.nextHeartbeat = t + heartbeatInterval();
+  }
 
   music.next += step;
   music.step++;
 }
 
 function scheduleMusicStep() {
-  if (soundtrackMode() === 'techno') { scheduleTechnoStep(); return; }
-  if (soundtrackMode() === 'fighter') { scheduleFighterStep(); return; }
-  if (soundtrackMode() === 'pirate') { schedulePirateStep(); return; }
-  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
-  const barStep = music.step % 32;
-  const chord = MUSIC_PATTERN[Math.floor(barStep / 8) % MUSIC_PATTERN.length];
-  const t = music.next;
-  if (barStep % 8 === 0) {
-    scheduleMusicTone(chord.root, t, game.state === 'playing' ? 3.0 : 4.4, 'sine', 0.055, music.pad, -0.22, 1.004);
-    scheduleMusicTone(chord.fifth, t + 0.08, game.state === 'playing' ? 2.8 : 4.2, 'triangle', 0.034, music.pad, 0.18, 0.997);
-    scheduleMusicTone(chord.top, t + 0.18, game.state === 'playing' ? 2.5 : 3.8, 'sine', 0.022, music.pad, 0.38, 1.002);
-  }
-  const inCombat = typeof game !== 'undefined' && game.state === 'playing';
-  const urgency = inCombat ? roundProgress() : 0;
-  if (inCombat) {
-    const heartbeat = finalHeartbeat();
-    const pulse = chord.root * 0.5;
-    scheduleMusicTone(pulse, t, 0.20, 'triangle', 0.030 + urgency * 0.016, music.pad, -0.05, 0.72);
-    if (barStep % 2 === 1) scheduleCombatNoise(t + 0.04, 0.16, 0.018 + urgency * 0.010);
-    if (urgency > 0.65 && barStep % 2 === 0) scheduleMusicTone(chord.root, t + currentMusicStep() * 0.48, 0.12, 'triangle', 0.012, music.pad, 0.08, 0.86);
-    if (t >= (music.nextHeartbeat || 0)) {
-      scheduleHeartbeatPhrase(t, pulse, 0.34 + heartbeat * 1.1);
-      music.nextHeartbeat = t + 2.15 - heartbeat * 1.45;
-    }
-  }
-  if ([2, 5].includes(barStep % 8)) {
-    const note = [chord.root, chord.fifth, chord.top, chord.root * 2][Math.floor(Math.random() * 4)];
-    scheduleMusicTone(note, t + 0.03, inCombat ? 0.8 : 1.15, 'sine', inCombat ? 0.010 : 0.014, music.sparkle, Math.random() * 1.2 - 0.6, 1.01);
-  }
-  if (!inCombat && barStep % 4 === 3) scheduleMusicNoise(t + 0.12, 1.1, 0.014, Math.random() * 1.2 - 0.6);
-  if (inCombat && [1, 3, 6].includes(barStep % 8)) {
-    const driftNotes = [chord.root * 1.5, chord.fifth * 1.5, chord.top, chord.root * 2];
-    const drift = driftNotes[Math.floor(Math.random() * driftNotes.length)];
-    scheduleMusicTone(drift, t + 0.02, 0.50 - urgency * 0.12, 'sine', 0.008 + urgency * 0.003, music.sparkle, Math.random() * 1.4 - 0.7, 1.012);
-    if (urgency > 0.55) scheduleMusicTone(drift * 0.75, t + 0.16, 0.32, 'triangle', 0.005, music.sparkle, Math.random() * 1.2 - 0.6, 0.99);
-  }
-  music.next += currentMusicStep();
-  music.step++;
+  scheduleArcaneStep(); // the only soundtrack
 }
 
 function updateSoundtrack() {

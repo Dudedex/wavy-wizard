@@ -2494,12 +2494,8 @@ const SETTINGS = [
   { key: 'dmgNumbers', label: 'Floating damage numbers', invert: true },
 ];
 
-const SOUNDTRACK_CHOICES = [
-  { id: 'ambient', label: 'Ambient Wizard' },
-  { id: 'fighter', label: 'Arcade Fighter' },
-  { id: 'pirate', label: 'High Seas Adventure' },
-  { id: 'techno', label: 'Neon Techno' },
-];
+// Only one soundtrack remains (Arcane Battle); the picker was removed from Settings.
+const SOUNDTRACK_CHOICES = [{ id: 'arcane', label: 'Arcane Battle' }];
 
 function renderSettings() {
   const el = document.getElementById('settings-list');
@@ -2556,14 +2552,6 @@ function renderSettings() {
   row('Reset sound settings', 'RESET', true, resetSoundSettings);
   row('Mute all (M)', muted ? 'MUTED' : 'ON', !muted, () => {
     muted = !muted; game.opt.muted = muted; saveOpts(); updateSoundtrack(); renderSettings();
-  });
-  const soundtrack = game.opt.soundtrack || 'ambient';
-  const stIdx = Math.max(0, SOUNDTRACK_CHOICES.findIndex(s => s.id === soundtrack));
-  row('Soundtrack', SOUNDTRACK_CHOICES[stIdx].label, true, () => {
-    const next = SOUNDTRACK_CHOICES[(stIdx + 1) % SOUNDTRACK_CHOICES.length];
-    game.opt.soundtrack = next.id;
-    if (music) { music.step = 0; music.next = audioCtx ? audioCtx.currentTime + 0.04 : 0; music.nextHeartbeat = 0; }
-    saveOpts(); updateSoundtrack(); sfx('buy'); renderSettings();
   });
 
   // --- Colour scheme ---
