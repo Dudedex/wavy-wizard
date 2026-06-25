@@ -2494,8 +2494,10 @@ const SETTINGS = [
   { key: 'dmgNumbers', label: 'Floating damage numbers', invert: true },
 ];
 
-// Only one soundtrack remains (Arcane Battle); the picker was removed from Settings.
-const SOUNDTRACK_CHOICES = [{ id: 'arcane', label: 'Arcane Battle' }];
+const SOUNDTRACK_CHOICES = [
+  { id: 'smooth', label: 'Moonlit Groove' },
+  { id: 'breakbeat', label: 'Bass Breakbeat' },
+];
 
 function renderSettings() {
   const el = document.getElementById('settings-list');
@@ -2543,12 +2545,20 @@ function renderSettings() {
     game.opt.spellVolume = 1;
     game.opt.musicVolume = 1;
     game.opt.menuVolume = 1;
+    game.opt.soundtrack = 'smooth';
     saveOpts(); updateSoundtrack(); sfx('buy'); renderSettings();
   };
   volumeSlider('volume', 'Master volume');
   volumeSlider('spellVolume', 'Spell effects');
   volumeSlider('musicVolume', 'Soundtrack');
   volumeSlider('menuVolume', 'Menu sounds');
+  const soundtrack = SOUNDTRACK_CHOICES.find(s => s.id === game.opt.soundtrack) || SOUNDTRACK_CHOICES[0];
+  row('Soundtrack', soundtrack.label, true, () => {
+    const i = SOUNDTRACK_CHOICES.findIndex(s => s.id === soundtrack.id);
+    game.opt.soundtrack = SOUNDTRACK_CHOICES[(i + 1) % SOUNDTRACK_CHOICES.length].id;
+    if (typeof music !== 'undefined' && music && audioCtx) { music.step = 0; music.next = audioCtx.currentTime + 0.05; }
+    saveOpts(); updateSoundtrack(); sfx('buy'); renderSettings();
+  });
   row('Reset sound settings', 'RESET', true, resetSoundSettings);
   row('Mute all (M)', muted ? 'MUTED' : 'ON', !muted, () => {
     muted = !muted; game.opt.muted = muted; saveOpts(); updateSoundtrack(); renderSettings();

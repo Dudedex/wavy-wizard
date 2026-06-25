@@ -13,24 +13,47 @@ let activeAudioCategory = 'spell';
 const MENU_SFX = new Set(['buy', 'shopBuy', 'shopSpell', 'shopFuse', 'shopReroll', 'shopLock', 'shopSell', 'shopDeny', 'shopLegendary', 'sell']);
 
 let music = null;
+let audioOut = null;
 const MUSIC_LOOKAHEAD = 0.18;
-const MUSIC_MENU_STEP = 0.5;   // relaxed tempo in menus
-const ARCANE_STEP = 0.26;      // steady combat tempo — the base soundtrack never speeds up
-// "Arcane Battle" — a dramatic minor progression (Am · G · F · E) for the wizard
-// arena: driving bass + four-on-the-floor under a memorable arcane lead, with a
-// harmonic-minor G# leading tone before the loop for tension.
-const ARCANE_PATTERN = [
-  { root: 110.00, fifth: 164.81, top: 329.63 }, // Am
+const SMOOTH_STEP = 0.34;       // constant chill tempo — no speed-up
+const BREAKBEAT_STEP = 0.17;    // constant drum-and-bass tempo — no speed-up
+// "Moonlit Groove" — pure tonal synth pads, rounded bass, and sparse bell
+// accents. There are no soundtrack noise bursts or wave-clock tempo changes.
+const SMOOTH_PATTERN = [
+  { root: 123.47, fifth: 185.00, top: 369.99 }, // Bm
   { root: 98.00,  fifth: 146.83, top: 392.00 }, // G
-  { root: 87.31,  fifth: 130.81, top: 349.23 }, // F
-  { root: 82.41,  fifth: 123.47, top: 329.63 }, // E (→ G# leading tone in the lead)
+  { root: 146.83, fifth: 220.00, top: 440.00 }, // D
+  { root: 110.00, fifth: 164.81, top: 329.63 }, // A
 ];
-// 16-step lead hook (one note per step, null = rest) over the 4-bar progression.
-const ARCANE_MELODY = [
-  440.00, null,   523.25, 659.25, // Am:  A · · C  E
-  587.33, 523.25, 493.88, null,   // G:   D  C  B ·
-  523.25, 440.00, 349.23, null,   // F:   C  A  F ·
-  415.30, 493.88, 659.25, 587.33, // E:   G# B  E  D  (resolves back to A)
+const SMOOTH_BASS = [
+  61.74, null, 73.42, 61.74,
+  49.00, null, 73.42, 49.00,
+  73.42, null, 110.00, 73.42,
+  55.00, null, 82.41, 55.00,
+];
+const SMOOTH_MELODY = [
+  493.88, null, null, 440.00,
+  null, 392.00, null, null,
+  440.00, null, 587.33, null,
+  554.37, null, 493.88, null,
+];
+const BREAKBEAT_PATTERN = [
+  { root: 55.00, fifth: 82.41, top: 220.00 },  // A
+  { root: 65.41, fifth: 98.00, top: 261.63 },  // C
+  { root: 49.00, fifth: 73.42, top: 196.00 },  // G
+  { root: 61.74, fifth: 92.50, top: 246.94 },  // B
+];
+const BREAKBEAT_BASS = [
+  55.00, null, 55.00, 82.41, null, 55.00, 110.00, null,
+  65.41, null, 98.00, null, 65.41, 130.81, null, 98.00,
+  49.00, null, 73.42, 98.00, null, 49.00, 98.00, null,
+  61.74, null, 92.50, null, 61.74, 123.47, null, 92.50,
+];
+const BREAKBEAT_STABS = [
+  null, null, 440.00, null, null, null, 392.00, null,
+  null, 523.25, null, null, 493.88, null, null, null,
+  null, null, 392.00, null, null, 440.00, null, null,
+  493.88, null, null, null, 554.37, null, 493.88, null,
 ];
 
 function ensureAudio(startMusic = true) {
@@ -58,7 +81,29 @@ function withAudioCategory(category, fn) {
   try { return fn(); } finally { activeAudioCategory = prev; }
 }
 
-function soundtrackMode() { return 'arcane'; } // only one soundtrack: Arcane Battle
+function soundtrackMode() {
+  return typeof game !== 'undefined' && game.opt && game.opt.soundtrack === 'breakbeat' ? 'breakbeat' : 'smooth';
+}
+
+function getAudioOutput() {
+  if (!audioCtx) return null;
+  if (audioOut) return audioOut;
+  const input = audioCtx.createGain();
+  input.gain.value = 0.86;
+  let output = input;
+  if (audioCtx.createDynamicsCompressor) {
+    const comp = audioCtx.createDynamicsCompressor();
+    // Conservative full-mix limiter catches combined music and spell SFX peaks
+    // before they hit the browser output and turn into audible crackle.
+    comp.threshold.value = -18; comp.knee.value = 18; comp.ratio.value = 10;
+    comp.attack.value = 0.003; comp.release.value = 0.16;
+    input.connect(comp);
+    output = comp;
+  }
+  output.connect(audioCtx.destination);
+  audioOut = input;
+  return audioOut;
+}
 
 function makeMusic() {
   if (!ensureAudio(false)) return null;
@@ -70,92 +115,61 @@ function makeMusic() {
   const delayFeedback = audioCtx.createGain();
   const spaceWet = audioCtx.createGain();
   lowpass.type = 'lowpass';
-  lowpass.frequency.value = 1850;
-  lowpass.Q.value = 0.7;
-  spaceDelay.delayTime.value = 0.42;
-  delayFeedback.gain.value = 0.28;
+  lowpass.frequency.value = 1700;
+  lowpass.Q.value = 0.55;
+  spaceDelay.delayTime.value = 0.48;
+  delayFeedback.gain.value = 0.20;
   spaceWet.gain.value = 0;
   pad.gain.value = 1;
-  sparkle.gain.value = 1;
+  sparkle.gain.value = 0.72;
   pad.connect(lowpass).connect(master);
   sparkle.connect(master);
   sparkle.connect(spaceDelay);
   spaceDelay.connect(delayFeedback).connect(spaceDelay);
   spaceDelay.connect(spaceWet).connect(master);
   master.gain.value = 0;
-  // soft limiter on the music bus: tames peaks when many voices stack so the mix
-  // never clips into harsh digital crackle
   let tail = master;
   if (audioCtx.createDynamicsCompressor) {
     const comp = audioCtx.createDynamicsCompressor();
-    comp.threshold.value = -14; comp.knee.value = 24; comp.ratio.value = 4;
-    comp.attack.value = 0.006; comp.release.value = 0.18;
+    comp.threshold.value = -18; comp.knee.value = 18; comp.ratio.value = 5;
+    comp.attack.value = 0.006; comp.release.value = 0.20;
     master.connect(comp); tail = comp;
   }
-  tail.connect(audioCtx.destination);
-  return { master, pad, sparkle, spaceWet, timer: null, next: audioCtx.currentTime, nextHeartbeat: 0, step: 0, running: false };
+  tail.connect(getAudioOutput());
+  return { master, pad, sparkle, spaceWet, timer: null, next: audioCtx.currentTime, step: 0, running: false };
 }
 
 function musicLevel() {
   if (muted || pageAudioMuted || typeof game === 'undefined' || !game.opt || game.opt.volume === 0) return 0;
   const base = audioVolume('music');
-  // Keep the soundtrack under spell SFX; it should feel present, not busy.
-  if (game.state === 'playing') return 0.9 * base;
-  if (['paused', 'levelup', 'mastery', 'shop', 'settings'].includes(game.state)) return 0.32 * base;
+  if (game.state === 'playing') return 0.72 * base;
+  if (['paused', 'levelup', 'mastery', 'shop', 'settings'].includes(game.state)) return 0.26 * base;
   return 0;
 }
 
-function roundProgress() {
-  if (typeof game === 'undefined' || game.state !== 'playing') return 0;
-  const dur = Number.isFinite(game.waveDur) ? game.waveDur : 60;
-  return Math.max(0, Math.min(1, (game.waveTime || 0) / Math.max(1, dur)));
-}
-
-function roundRemaining() {
-  if (typeof game === 'undefined' || game.state !== 'playing' || !Number.isFinite(game.waveDur)) return Infinity;
-  return Math.max(0, game.waveDur - (game.waveTime || 0));
-}
-
-function finalHeartbeat() {
-  const left = roundRemaining();
-  return left <= 10 ? 1 - left / 10 : 0;
-}
-
 function currentMusicStep() {
-  // Constant tempo: the base soundtrack never speeds up — only the heartbeat does.
-  if (typeof game === 'undefined' || game.state !== 'playing') return MUSIC_MENU_STEP;
-  return ARCANE_STEP;
-}
-
-// The heartbeat is the only thing that accelerates: its interval shrinks as the
-// wave progresses, then races in the final 10 seconds.
-function heartbeatInterval() {
-  const iv = 1.15 - roundProgress() * 0.5 - finalHeartbeat() * 0.45;
-  return Math.max(0.34, iv);
+  return soundtrackMode() === 'breakbeat' ? BREAKBEAT_STEP : SMOOTH_STEP;
 }
 
 function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1) {
-  if (!music || !audioCtx || !(vol > 0)) return; // exp envelope needs a positive target
+  if (!music || !audioCtx || !(vol > 0)) return;
   const osc = audioCtx.createOscillator();
   const g = audioCtx.createGain();
   osc.type = type;
   osc.frequency.setValueAtTime(freq, start);
   if (bend !== 1) osc.frequency.exponentialRampToValueAtTime(Math.max(20, freq * bend), start + dur);
-  // Smooth, click-free envelope that scales to the note length: gentle exponential
-  // attack & release (no hard value steps), so short notes don't pop and long pads
-  // fade cleanly. Longer notes get a longer, softer attack/release.
-  const atk = Math.min(0.5, Math.max(0.012, dur * 0.35));
-  const rel = Math.min(1.2, Math.max(0.06, dur * 0.5));
-  const sustainAt = start + Math.max(atk, dur - rel);
+  const atk = Math.min(0.35, Math.max(0.018, dur * 0.22));
+  const rel = Math.min(0.9, Math.max(0.08, dur * 0.45));
+  const releaseAt = start + Math.max(atk, dur - rel);
   g.gain.setValueAtTime(0.0001, start);
-  g.gain.exponentialRampToValueAtTime(vol, start + atk);
-  g.gain.setValueAtTime(vol, sustainAt);
+  g.gain.linearRampToValueAtTime(vol, start + atk);
+  g.gain.setValueAtTime(vol, releaseAt);
   g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
   let out = g;
   if (audioCtx.createStereoPanner) {
-    const p = audioCtx.createStereoPanner();
-    p.pan.value = pan;
-    g.connect(p); out = p;
+    const panner = audioCtx.createStereoPanner();
+    panner.pan.value = pan;
+    g.connect(panner); out = panner;
   }
   osc.connect(g);
   out.connect(dest);
@@ -163,130 +177,89 @@ function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1)
   osc.stop(start + dur + 0.05);
 }
 
-function scheduleMusicNoise(start, dur, vol, pan = 0) {
-  if (!music || !audioCtx) return;
-  const n = Math.floor(audioCtx.sampleRate * dur);
-  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
-  const src = audioCtx.createBufferSource(); src.buffer = buf;
-  const filt = audioCtx.createBiquadFilter(); filt.type = 'bandpass'; filt.frequency.value = 2500 + Math.random() * 1800; filt.Q.value = 8;
-  const g = audioCtx.createGain();
-  g.gain.setValueAtTime(0.0001, start);
-  g.gain.linearRampToValueAtTime(vol, start + 0.05);
-  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-  let out = g;
-  if (audioCtx.createStereoPanner) { const p = audioCtx.createStereoPanner(); p.pan.value = pan; g.connect(p); out = p; }
-  src.connect(filt).connect(g); out.connect(music.sparkle);
-  src.start(start); src.stop(start + dur + 0.05);
-}
-
-
-function scheduleCombatNoise(start, dur, vol) {
-  if (!music || !audioCtx) return;
-  const n = Math.floor(audioCtx.sampleRate * dur);
-  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2);
-  const src = audioCtx.createBufferSource(); src.buffer = buf;
-  const filt = audioCtx.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 520; filt.Q.value = 0.8;
-  const g = audioCtx.createGain();
-  // soft 3ms attack instead of an instant jump → no onset click ("GSM buzz")
-  g.gain.setValueAtTime(0.0001, start);
-  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), start + 0.003);
-  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-  src.connect(filt).connect(g).connect(music.pad);
-  src.start(start); src.stop(start + dur + 0.03);
-}
-
-
-// A single kick-drum thud (pitched-down sine + lowpassed noise body).
-function heartKick(start, vol) {
-  if (!music || !audioCtx) return;
-  scheduleMusicTone(95, start, 0.20, 'sine', vol, music.pad, 0, 0.42);
-  scheduleCombatNoise(start + 0.004, 0.07, vol * 0.55);
-}
-
-// A real "lub-dub" heartbeat drum (replaces the old tonal phrase).
-function scheduleHeartbeatPhrase(start, root, gain) {
-  if (!music || !audioCtx || gain <= 0) return;
-  heartKick(start, 0.062 * gain);          // lub
-  heartKick(start + 0.17, 0.046 * gain);   // dub
-}
-
-function scheduleTechnoHat(start, dur, vol, pan = 0) {
-  if (!music || !audioCtx) return;
-  const n = Math.floor(audioCtx.sampleRate * dur);
-  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3);
-  const src = audioCtx.createBufferSource(); src.buffer = buf;
-  const filt = audioCtx.createBiquadFilter(); filt.type = 'highpass'; filt.frequency.value = 5200; filt.Q.value = 0.8;
-  const g = audioCtx.createGain();
-  g.gain.setValueAtTime(0.0001, start);           // 2ms attack → no high-freq click
-  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), start + 0.002);
-  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-  let out = g;
-  if (audioCtx.createStereoPanner) { const p = audioCtx.createStereoPanner(); p.pan.value = pan; g.connect(p); out = p; }
-  src.connect(filt).connect(g); out.connect(music.sparkle);
-  src.start(start); src.stop(start + dur + 0.02);
-}
-
-// "Arcane Battle": melodic minor battle theme — sustained pad, driving bass,
-// four-on-the-floor percussion, and a recognizable arcane lead hook that all
-// intensify as the wave clock runs down.
-function scheduleArcaneStep() {
+// "Moonlit Groove": pure tonal synth pads, rounded bass, and sparse bell
+// accents. No noise layers and no wave-clock acceleration.
+function scheduleSmoothStep() {
   if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
   const cycle = music.step % 16;
-  const chord = ARCANE_PATTERN[Math.floor(cycle / 4) % ARCANE_PATTERN.length];
+  const chord = SMOOTH_PATTERN[Math.floor(cycle / 4) % SMOOTH_PATTERN.length];
   const t = music.next;
-  const inCombat = typeof game !== 'undefined' && game.state === 'playing';
-  const urgency = inCombat ? roundProgress() : 0;
   const step = currentMusicStep();
   const beat = cycle % 4;
 
-  // sustained chord pad at the head of each bar — runs LONGER than the bar so it
-  // overlaps (crossfades into) the next bar's pad, removing the per-loop seam.
   if (beat === 0) {
-    const padDur = step * 5.2; // bar = 4 steps; ~1.2 steps of overlap for a seamless join
-    scheduleMusicTone(chord.root, t, padDur, 'triangle', 0.016 + urgency * 0.005, music.pad, -0.28, 1.001);
-    scheduleMusicTone(chord.fifth, t + 0.03, padDur, 'triangle', 0.012, music.pad, 0.22, 0.999);
-    scheduleMusicTone(chord.top, t + 0.06, padDur, 'sine', 0.009, music.pad, 0.4, 1.002);
+    const padDur = step * 6.2;
+    scheduleMusicTone(chord.root, t, padDur, 'triangle', 0.0085, music.pad, -0.34, 1.001);
+    scheduleMusicTone(chord.fifth, t + 0.045, padDur, 'triangle', 0.0068, music.pad, 0.18, 0.999);
+    scheduleMusicTone(chord.top, t + 0.09, padDur, 'sine', 0.0052, music.pad, 0.38, 1.0015);
   }
 
-  // driving bass: smooth triangle root each step, soft octave push on the offbeat
-  scheduleMusicTone(chord.root * 0.5, t, step * 0.95, 'triangle', 0.034 + urgency * 0.016, music.pad, -0.08, 1.0);
-  if (inCombat) scheduleMusicTone(chord.root, t + step * 0.5, step * 0.5, 'sine', 0.012 + urgency * 0.010, music.pad, 0.06, 1.0);
-
-  // percussion: kick body on each beat, bright backbeat on beat 2, hats while fighting
-  scheduleCombatNoise(t + 0.008, 0.06, 0.015 + urgency * 0.012);
-  if (beat === 2) scheduleMusicNoise(t + 0.01, 0.12, 0.011 + urgency * 0.012, 0.05);
-  if (inCombat) {
-    scheduleTechnoHat(t + step * 0.5, 0.04, 0.008 + urgency * 0.006, beat % 2 ? 0.3 : -0.3);
-    if (urgency > 0.4 && beat % 2 === 1) scheduleTechnoHat(t + step * 0.25, 0.03, 0.005 + urgency * 0.004, Math.random() - 0.5);
+  const bass = SMOOTH_BASS[cycle];
+  if (bass) {
+    scheduleMusicTone(bass, t, step * 1.08, 'sine', 0.030, music.pad, -0.08, 0.998);
+    if (beat !== 1) scheduleMusicTone(bass * 2, t + step * 0.04, step * 0.72, 'triangle', 0.0055, music.pad, 0.05, 1.001);
   }
 
-  // the arcane lead hook — the recognizable melody (plays softer in menus)
-  const mel = ARCANE_MELODY[cycle];
+  // Soft tonal pulse instead of noisy percussion, so the soundtrack has motion
+  // without high-frequency click/tick artifacts.
+  if (beat === 0 || beat === 2) {
+    scheduleMusicTone(chord.root * 0.5, t + step * 0.02, step * 0.5, 'sine', 0.010, music.pad, 0, 0.94);
+  }
+
+  const mel = SMOOTH_MELODY[cycle];
   if (mel) {
-    const leadVol = (inCombat ? 0.016 : 0.010) + urgency * 0.006;
-    scheduleMusicTone(mel, t + step * 0.04, step * 0.92, 'triangle', leadVol, music.sparkle, 0.0, 1.0);
-    scheduleMusicTone(mel * 2, t + step * 0.05, step * 0.5, 'sine', leadVol * 0.4, music.sparkle, 0.25, 1.0);
-  }
-
-  // heartbeat drum on its OWN accelerating cadence (the base tempo stays constant);
-  // it quickens as the wave runs down and races in the final 10 seconds.
-  if (inCombat && t >= (music.nextHeartbeat || 0)) {
-    scheduleHeartbeatPhrase(t, chord.root * 0.5, 0.55 + finalHeartbeat() * 0.6);
-    music.nextHeartbeat = t + heartbeatInterval();
+    scheduleMusicTone(mel, t + step * 0.08, step * 1.22, 'sine', 0.0072, music.sparkle, 0.05, 1.0);
+    scheduleMusicTone(mel * 0.5, t + step * 0.12, step * 1.0, 'triangle', 0.0030, music.sparkle, -0.22, 1.001);
   }
 
   music.next += step;
   music.step++;
 }
 
+function scheduleBreakbeatStep() {
+  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
+  const cycle = music.step % 32;
+  const chord = BREAKBEAT_PATTERN[Math.floor(cycle / 8) % BREAKBEAT_PATTERN.length];
+  const t = music.next;
+  const step = currentMusicStep();
+  const beat = cycle % 8;
+
+  if (cycle % 8 === 0) {
+    const padDur = step * 9.4;
+    scheduleMusicTone(chord.root * 2, t, padDur, 'triangle', 0.0048, music.pad, -0.22, 1.001);
+    scheduleMusicTone(chord.fifth * 2, t + 0.03, padDur, 'triangle', 0.0038, music.pad, 0.18, 0.999);
+    scheduleMusicTone(chord.top, t + 0.06, padDur, 'sine', 0.0034, music.pad, 0.34, 1.001);
+  }
+
+  const bass = BREAKBEAT_BASS[cycle];
+  if (bass) {
+    scheduleMusicTone(bass, t, step * 1.18, 'sine', 0.034, music.pad, -0.10, 0.996);
+    scheduleMusicTone(bass * 2, t + step * 0.03, step * 0.72, 'triangle', 0.0075, music.pad, 0.04, 1.001);
+  }
+
+  // Drum-and-bass feel without noisy samples: tonal kick/snare/hat shapes with
+  // soft envelopes so the groove is punchier but still click-free.
+  if (cycle % 16 === 0 || cycle % 16 === 10) {
+    scheduleMusicTone(88, t, step * 0.9, 'sine', 0.030, music.pad, -0.02, 0.42);
+  }
+  if (cycle % 16 === 4 || cycle % 16 === 12) {
+    scheduleMusicTone(185, t + step * 0.02, step * 0.62, 'triangle', 0.014, music.sparkle, 0.08, 0.78);
+    scheduleMusicTone(740, t + step * 0.03, step * 0.38, 'sine', 0.0048, music.sparkle, -0.12, 1.05);
+  }
+  if (beat % 2 === 1) {
+    scheduleMusicTone(1760, t + step * 0.06, step * 0.42, 'sine', 0.0024, music.sparkle, beat === 1 || beat === 5 ? -0.28 : 0.28, 1.01);
+  }
+
+  const stab = BREAKBEAT_STABS[cycle];
+  if (stab) scheduleMusicTone(stab, t + step * 0.08, step * 0.85, 'triangle', 0.0052, music.sparkle, 0.18, 1.0);
+
+  music.next += step;
+  music.step++;
+}
+
 function scheduleMusicStep() {
-  scheduleArcaneStep(); // the only soundtrack
+  if (soundtrackMode() === 'breakbeat') scheduleBreakbeatStep();
+  else scheduleSmoothStep();
 }
 
 function updateSoundtrack() {
@@ -297,7 +270,7 @@ function updateSoundtrack() {
   const t = audioCtx.currentTime;
   music.master.gain.cancelScheduledValues(t);
   music.master.gain.setTargetAtTime(target, t, target > 0 ? 0.8 : 0.25);
-  if (music.spaceWet) music.spaceWet.gain.setTargetAtTime(game.state === 'playing' ? 1 : 0, t, 0.35);
+  if (music.spaceWet) music.spaceWet.gain.setTargetAtTime(game.state === 'playing' ? 0.8 : 0.25, t, 0.35);
   if (target > 0 && !music.running) {
     music.running = true;
     music.next = Math.max(music.next || t, t + 0.04);
@@ -334,9 +307,11 @@ function blip(f0, f1, dur, type, vol, delay = 0, gain = 1) {
   o.type = type;
   o.frequency.setValueAtTime(f0, t);
   o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
-  g.gain.setValueAtTime(vol, t);
+  const atk = Math.min(0.01, Math.max(0.003, dur * 0.12));
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + atk);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g).connect(audioCtx.destination);
+  o.connect(g).connect(getAudioOutput());
   o.start(t);
   o.stop(t + dur + 0.02);
 }
@@ -350,7 +325,10 @@ function noise(dur, filterType, f0, f1, vol, delay = 0, gain = 1) {
   const n = Math.floor(audioCtx.sampleRate * dur);
   const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
   const d = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  for (let i = 0; i < n; i++) {
+    const edge = Math.min(1, i / Math.max(1, n * 0.025), (n - 1 - i) / Math.max(1, n * 0.05));
+    d[i] = (Math.random() * 2 - 1) * Math.max(0, edge);
+  }
   const src = audioCtx.createBufferSource(); src.buffer = buf;
   const filt = audioCtx.createBiquadFilter();
   filt.type = filterType;
@@ -358,9 +336,11 @@ function noise(dur, filterType, f0, f1, vol, delay = 0, gain = 1) {
   filt.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
   filt.Q.value = filterType === 'bandpass' ? 5 : 1;
   const g = audioCtx.createGain();
-  g.gain.setValueAtTime(v, t);
+  const atk = Math.min(0.018, Math.max(0.004, dur * 0.08));
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(v, t + atk);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(filt).connect(g).connect(audioCtx.destination);
+  src.connect(filt).connect(g).connect(getAudioOutput());
   src.start(t);
   src.stop(t + dur + 0.02);
 }
