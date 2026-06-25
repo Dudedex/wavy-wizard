@@ -15,11 +15,9 @@ const MENU_SFX = new Set(['buy', 'shopBuy', 'shopSpell', 'shopFuse', 'shopReroll
 let music = null;
 let audioOut = null;
 const MUSIC_LOOKAHEAD = 0.18;
-const MUSIC_MENU_STEP = 0.56;   // relaxed tempo in menus
-const SMOOTH_STEP = 0.30;       // steady, laid-back groove during play
-// "Moonlit Groove" — a new smooth synth soundtrack with warm sustained chords,
-// a rounded sub-bass line, and sparse bell accents. It has no timer-driven
-// acceleration: the track should loop calmly and keep its bass pocket.
+const MUSIC_STEP = 0.34;        // one constant tempo everywhere — no speed-up
+// "Moonlit Groove" — pure tonal synth pads, rounded bass, and sparse bell
+// accents. There are no soundtrack noise bursts or wave-clock tempo changes.
 const SMOOTH_PATTERN = [
   { root: 123.47, fifth: 185.00, top: 369.99 }, // Bm
   { root: 98.00,  fifth: 146.83, top: 392.00 }, // G
@@ -74,9 +72,8 @@ function getAudioOutput() {
   let output = input;
   if (audioCtx.createDynamicsCompressor) {
     const comp = audioCtx.createDynamicsCompressor();
-    // Conservative full-mix limiter: the revised soundtrack stacks sustained pads,
-    // bass, hats, delay tails, and spell SFX. Catch those combined peaks before
-    // they hit the browser output and turn into audible crackle.
+    // Conservative full-mix limiter catches combined music and spell SFX peaks
+    // before they hit the browser output and turn into audible crackle.
     comp.threshold.value = -18; comp.knee.value = 18; comp.ratio.value = 10;
     comp.attack.value = 0.003; comp.release.value = 0.16;
     input.connect(comp);
@@ -97,21 +94,19 @@ function makeMusic() {
   const delayFeedback = audioCtx.createGain();
   const spaceWet = audioCtx.createGain();
   lowpass.type = 'lowpass';
-  lowpass.frequency.value = 1850;
-  lowpass.Q.value = 0.7;
-  spaceDelay.delayTime.value = 0.42;
-  delayFeedback.gain.value = 0.28;
+  lowpass.frequency.value = 1700;
+  lowpass.Q.value = 0.55;
+  spaceDelay.delayTime.value = 0.48;
+  delayFeedback.gain.value = 0.20;
   spaceWet.gain.value = 0;
   pad.gain.value = 1;
-  sparkle.gain.value = 1;
+  sparkle.gain.value = 0.72;
   pad.connect(lowpass).connect(master);
   sparkle.connect(master);
   sparkle.connect(spaceDelay);
   spaceDelay.connect(delayFeedback).connect(spaceDelay);
   spaceDelay.connect(spaceWet).connect(master);
   master.gain.value = 0;
-  // soft limiter on the music bus: tames peaks when many voices stack so the mix
-  // never clips into harsh digital crackle
   let tail = master;
   if (audioCtx.createDynamicsCompressor) {
     const comp = audioCtx.createDynamicsCompressor();
@@ -126,45 +121,34 @@ function makeMusic() {
 function musicLevel() {
   if (muted || pageAudioMuted || typeof game === 'undefined' || !game.opt || game.opt.volume === 0) return 0;
   const base = audioVolume('music');
-  // Keep the soundtrack under spell SFX; it should feel present, not busy.
   if (game.state === 'playing') return 0.72 * base;
   if (['paused', 'levelup', 'mastery', 'shop', 'settings'].includes(game.state)) return 0.26 * base;
   return 0;
 }
 
-function roundProgress() {
-  if (typeof game === 'undefined' || game.state !== 'playing') return 0;
-  const dur = Number.isFinite(game.waveDur) ? game.waveDur : 60;
-  return Math.max(0, Math.min(1, (game.waveTime || 0) / Math.max(1, dur)));
-}
-
 function currentMusicStep() {
-  if (typeof game === 'undefined' || game.state !== 'playing') return MUSIC_MENU_STEP;
-  return SMOOTH_STEP;
+  return MUSIC_STEP;
 }
 
 function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1) {
-  if (!music || !audioCtx || !(vol > 0)) return; // exp envelope needs a positive target
+  if (!music || !audioCtx || !(vol > 0)) return;
   const osc = audioCtx.createOscillator();
   const g = audioCtx.createGain();
   osc.type = type;
   osc.frequency.setValueAtTime(freq, start);
   if (bend !== 1) osc.frequency.exponentialRampToValueAtTime(Math.max(20, freq * bend), start + dur);
-  // Smooth, click-free envelope that scales to the note length: gentle exponential
-  // attack & release (no hard value steps), so short notes don't pop and long pads
-  // fade cleanly. Longer notes get a longer, softer attack/release.
-  const atk = Math.min(0.5, Math.max(0.012, dur * 0.35));
-  const rel = Math.min(1.2, Math.max(0.06, dur * 0.5));
-  const sustainAt = start + Math.max(atk, dur - rel);
+  const atk = Math.min(0.35, Math.max(0.018, dur * 0.22));
+  const rel = Math.min(0.9, Math.max(0.08, dur * 0.45));
+  const releaseAt = start + Math.max(atk, dur - rel);
   g.gain.setValueAtTime(0.0001, start);
-  g.gain.exponentialRampToValueAtTime(vol, start + atk);
-  g.gain.setValueAtTime(vol, sustainAt);
+  g.gain.linearRampToValueAtTime(vol, start + atk);
+  g.gain.setValueAtTime(vol, releaseAt);
   g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
   let out = g;
   if (audioCtx.createStereoPanner) {
-    const p = audioCtx.createStereoPanner();
-    p.pan.value = pan;
-    g.connect(p); out = p;
+    const panner = audioCtx.createStereoPanner();
+    panner.pan.value = pan;
+    g.connect(panner); out = panner;
   }
   osc.connect(g);
   out.connect(dest);
@@ -172,103 +156,39 @@ function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1)
   osc.stop(start + dur + 0.05);
 }
 
-function scheduleMusicNoise(start, dur, vol, pan = 0) {
-  if (!music || !audioCtx) return;
-  const n = Math.floor(audioCtx.sampleRate * dur);
-  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
-  const src = audioCtx.createBufferSource(); src.buffer = buf;
-  const filt = audioCtx.createBiquadFilter(); filt.type = 'bandpass'; filt.frequency.value = 2500 + Math.random() * 1800; filt.Q.value = 8;
-  const g = audioCtx.createGain();
-  g.gain.setValueAtTime(0.0001, start);
-  g.gain.linearRampToValueAtTime(vol, start + 0.05);
-  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-  let out = g;
-  if (audioCtx.createStereoPanner) { const p = audioCtx.createStereoPanner(); p.pan.value = pan; g.connect(p); out = p; }
-  src.connect(filt).connect(g); out.connect(music.sparkle);
-  src.start(start); src.stop(start + dur + 0.05);
-}
-
-
-function scheduleCombatNoise(start, dur, vol) {
-  if (!music || !audioCtx) return;
-  const n = Math.floor(audioCtx.sampleRate * dur);
-  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2);
-  const src = audioCtx.createBufferSource(); src.buffer = buf;
-  const filt = audioCtx.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 520; filt.Q.value = 0.8;
-  const g = audioCtx.createGain();
-  // soft 3ms attack instead of an instant jump → no onset click ("GSM buzz")
-  g.gain.setValueAtTime(0.0001, start);
-  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), start + 0.003);
-  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-  src.connect(filt).connect(g).connect(music.pad);
-  src.start(start); src.stop(start + dur + 0.03);
-}
-
-
-function scheduleTechnoHat(start, dur, vol, pan = 0) {
-  if (!music || !audioCtx) return;
-  const n = Math.floor(audioCtx.sampleRate * dur);
-  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3);
-  const src = audioCtx.createBufferSource(); src.buffer = buf;
-  const filt = audioCtx.createBiquadFilter(); filt.type = 'highpass'; filt.frequency.value = 5200; filt.Q.value = 0.8;
-  const g = audioCtx.createGain();
-  g.gain.setValueAtTime(0.0001, start);           // 2ms attack → no high-freq click
-  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), start + 0.002);
-  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-  let out = g;
-  if (audioCtx.createStereoPanner) { const p = audioCtx.createStereoPanner(); p.pan.value = pan; g.connect(p); out = p; }
-  src.connect(filt).connect(g); out.connect(music.sparkle);
-  src.start(start); src.stop(start + dur + 0.02);
-}
-
-// "Moonlit Groove": smooth synth pads, a rounded bass pocket, soft percussion,
-// and sparse bell accents. It deliberately has no wave-clock acceleration, so
-// the loop remains cool and even from start to finish.
+// "Moonlit Groove": pure tonal synth pads, rounded bass, and sparse bell
+// accents. No noise layers and no wave-clock acceleration.
 function scheduleSmoothStep() {
   if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
   const cycle = music.step % 16;
   const chord = SMOOTH_PATTERN[Math.floor(cycle / 4) % SMOOTH_PATTERN.length];
   const t = music.next;
-  const inCombat = typeof game !== 'undefined' && game.state === 'playing';
-  const glow = inCombat ? 0.75 + roundProgress() * 0.12 : 0.58;
   const step = currentMusicStep();
   const beat = cycle % 4;
 
-  // Long overlapping pads keep the progression smooth over both bar and loop
-  // boundaries. Slight detune bends add movement without making the loop obvious.
   if (beat === 0) {
-    const padDur = step * 5.6;
-    scheduleMusicTone(chord.root, t, padDur, 'triangle', 0.010 * glow, music.pad, -0.34, 1.0015);
-    scheduleMusicTone(chord.fifth, t + 0.04, padDur, 'triangle', 0.008 * glow, music.pad, 0.18, 0.9985);
-    scheduleMusicTone(chord.top, t + 0.08, padDur, 'sine', 0.006 * glow, music.pad, 0.38, 1.002);
+    const padDur = step * 6.2;
+    scheduleMusicTone(chord.root, t, padDur, 'triangle', 0.0085, music.pad, -0.34, 1.001);
+    scheduleMusicTone(chord.fifth, t + 0.045, padDur, 'triangle', 0.0068, music.pad, 0.18, 0.999);
+    scheduleMusicTone(chord.top, t + 0.09, padDur, 'sine', 0.0052, music.pad, 0.38, 1.0015);
   }
 
-  // Warm sub-bass groove. A tiny overlapping octave layer gives body, but stays
-  // filtered and quiet enough to avoid clipping when spell sounds are active.
   const bass = SMOOTH_BASS[cycle];
   if (bass) {
-    scheduleMusicTone(bass, t, step * 0.94, 'sine', 0.032 * glow, music.pad, -0.08, 0.997);
-    if (inCombat && beat !== 1) scheduleMusicTone(bass * 2, t + step * 0.03, step * 0.62, 'triangle', 0.007 * glow, music.pad, 0.04, 1.001);
+    scheduleMusicTone(bass, t, step * 1.08, 'sine', 0.030, music.pad, -0.08, 0.998);
+    if (beat !== 1) scheduleMusicTone(bass * 2, t + step * 0.04, step * 0.72, 'triangle', 0.0055, music.pad, 0.05, 1.001);
   }
 
-  // Soft groove percussion: low thump on downbeats, light hats on offbeats, and
-  // an occasional airy sweep to glue the loop together.
-  if (beat === 0 || beat === 2) scheduleCombatNoise(t + 0.01, 0.09, 0.008 * glow);
-  if (inCombat) scheduleTechnoHat(t + step * 0.5, 0.045, 0.0035 * glow, beat % 2 ? 0.28 : -0.28);
-  if (cycle === 14) scheduleMusicNoise(t + step * 0.35, step * 0.9, 0.0045 * glow, 0.12);
+  // Soft tonal pulse instead of noisy percussion, so the soundtrack has motion
+  // without high-frequency click/tick artifacts.
+  if (beat === 0 || beat === 2) {
+    scheduleMusicTone(chord.root * 0.5, t + step * 0.02, step * 0.5, 'sine', 0.010, music.pad, 0, 0.94);
+  }
 
-  // Sparse, smooth melody accents; the final note leaves space for the first bell
-  // of the next cycle, creating a calm repeat instead of an obvious restart.
   const mel = SMOOTH_MELODY[cycle];
   if (mel) {
-    scheduleMusicTone(mel, t + step * 0.08, step * 1.15, 'sine', 0.008 * glow, music.sparkle, 0.05, 1.0);
-    scheduleMusicTone(mel * 0.5, t + step * 0.1, step * 0.9, 'triangle', 0.0035 * glow, music.sparkle, -0.22, 1.002);
+    scheduleMusicTone(mel, t + step * 0.08, step * 1.22, 'sine', 0.0072, music.sparkle, 0.05, 1.0);
+    scheduleMusicTone(mel * 0.5, t + step * 0.12, step * 1.0, 'triangle', 0.0030, music.sparkle, -0.22, 1.001);
   }
 
   music.next += step;
@@ -276,7 +196,7 @@ function scheduleSmoothStep() {
 }
 
 function scheduleMusicStep() {
-  scheduleSmoothStep(); // the only soundtrack
+  scheduleSmoothStep();
 }
 
 function updateSoundtrack() {
@@ -287,7 +207,7 @@ function updateSoundtrack() {
   const t = audioCtx.currentTime;
   music.master.gain.cancelScheduledValues(t);
   music.master.gain.setTargetAtTime(target, t, target > 0 ? 0.8 : 0.25);
-  if (music.spaceWet) music.spaceWet.gain.setTargetAtTime(game.state === 'playing' ? 1 : 0, t, 0.35);
+  if (music.spaceWet) music.spaceWet.gain.setTargetAtTime(game.state === 'playing' ? 0.8 : 0.25, t, 0.35);
   if (target > 0 && !music.running) {
     music.running = true;
     music.next = Math.max(music.next || t, t + 0.04);
@@ -324,7 +244,9 @@ function blip(f0, f1, dur, type, vol, delay = 0, gain = 1) {
   o.type = type;
   o.frequency.setValueAtTime(f0, t);
   o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
-  g.gain.setValueAtTime(vol, t);
+  const atk = Math.min(0.01, Math.max(0.003, dur * 0.12));
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + atk);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   o.connect(g).connect(getAudioOutput());
   o.start(t);
@@ -340,7 +262,10 @@ function noise(dur, filterType, f0, f1, vol, delay = 0, gain = 1) {
   const n = Math.floor(audioCtx.sampleRate * dur);
   const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
   const d = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  for (let i = 0; i < n; i++) {
+    const edge = Math.min(1, i / Math.max(1, n * 0.025), (n - 1 - i) / Math.max(1, n * 0.05));
+    d[i] = (Math.random() * 2 - 1) * Math.max(0, edge);
+  }
   const src = audioCtx.createBufferSource(); src.buffer = buf;
   const filt = audioCtx.createBiquadFilter();
   filt.type = filterType;
@@ -348,7 +273,9 @@ function noise(dur, filterType, f0, f1, vol, delay = 0, gain = 1) {
   filt.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
   filt.Q.value = filterType === 'bandpass' ? 5 : 1;
   const g = audioCtx.createGain();
-  g.gain.setValueAtTime(v, t);
+  const atk = Math.min(0.018, Math.max(0.004, dur * 0.08));
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(v, t + atk);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   src.connect(filt).connect(g).connect(getAudioOutput());
   src.start(t);
