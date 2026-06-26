@@ -2586,6 +2586,7 @@ function renderSettings() {
 }
 
 function setState(s) {
+  hideTooltip(); // never carry a hover tooltip across screens
   game.state = s;
   for (const id of overlays) {
     document.getElementById(id).classList.toggle('visible', id === s);
@@ -4988,6 +4989,11 @@ function dpsEstimate(t) {
 const tooltipEl = document.getElementById('tooltip');
 
 function hideTooltip() { tooltipEl.classList.remove('show'); }
+// Catch-alls so a tooltip can never get stuck if its element is removed before
+// mouseleave fires (re-render, tap, window switch, scroll).
+window.addEventListener('pointerdown', hideTooltip, true);
+window.addEventListener('blur', hideTooltip);
+window.addEventListener('scroll', hideTooltip, true);
 
 function showTooltip(html, clientX, clientY) {
   tooltipEl.innerHTML = html;

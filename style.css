@@ -39,13 +39,13 @@ canvas#game {
 }
 
 /* ---------- overlays ---------- */
+/* Menus fill the whole viewport and lay out responsively (sizing handled by the
+   media queries below) — no global scale transform, so they read at a comfortable
+   size on phones, tablets and desktops alike. */
 .overlay {
-  position: absolute;
-  top: 50%; left: 50%;
-  width: var(--ui-width);
-  height: var(--ui-height);
-  transform: translate(-50%, -50%) scale(var(--ui-scale));
-  transform-origin: center;
+  position: fixed;
+  inset: 0;
+  width: 100vw; height: 100vh;
   display: none;
   flex-direction: column;
   align-items: center;
@@ -54,8 +54,9 @@ canvas#game {
      so the danger selector & options at the top stay reachable + scrollable. */
   justify-content: safe center;
   overflow-y: auto;
-  gap: 18px;
-  padding: 20px 0;
+  -webkit-overflow-scrolling: touch;
+  gap: 12px;
+  padding: 20px 12px;
   background: rgba(8, 10, 20, 0.86);
   backdrop-filter: blur(3px);
   text-align: center;
@@ -65,7 +66,7 @@ canvas#game {
 .overlay.visible { display: flex; }
 
 h1 {
-  font-size: 72px; letter-spacing: 10px;
+  font-size: clamp(40px, 7vw, 60px); letter-spacing: 8px;
   color: #8be0ff;
   text-shadow: 0 0 30px rgba(120, 200, 255, 0.6), 0 4px 0 #1b3a55;
 }
@@ -86,8 +87,8 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 
 /* ---------- buttons ---------- */
 .big-btn {
-  font-size: 22px; font-weight: 700; letter-spacing: 2px;
-  padding: 14px 44px;
+  font-size: 20px; font-weight: 700; letter-spacing: 2px;
+  padding: 11px 38px;
   background: linear-gradient(180deg, #2d6fb8, #1d4a80);
   color: #eaf6ff;
   border: 2px solid #5fb4ff;
@@ -558,7 +559,7 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 @keyframes win-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 
 /* ---------- highscore scoreboard ---------- */
-#scoreboard { margin-top: 16px; width: 460px; max-width: 92vw; }
+#scoreboard { margin-top: 6px; width: 460px; max-width: 92vw; max-height: 34vh; overflow-y: auto; }
 #scoreboard h3 { font-size: 14px; letter-spacing: 2px; color: #ffd454; margin-bottom: 8px; text-transform: uppercase; }
 .sb-wrap { margin: 6px 0 14px; width: 460px; max-width: 92vw; }
 .scoreboard { width: 100%; border-collapse: collapse; font-size: 13px; }

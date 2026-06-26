@@ -256,6 +256,9 @@ function offerPrice(offer) {
 }
 
 function renderShop() {
+  // rebuilding the cards destroys whatever element was hovered, so its mouseleave
+  // never fires — clear any tooltip up front so it can't get stuck on screen
+  if (typeof hideTooltip === 'function') hideTooltip();
   const p = game.player;
   document.getElementById('shop-title').textContent = `SHOP — before wave ${game.wave + 1}`;
   document.getElementById('shop-gold').textContent = `💰 ${game.gold} gold`;
