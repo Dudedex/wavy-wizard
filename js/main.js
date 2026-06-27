@@ -293,6 +293,7 @@ function freshPlayer(charDef, starterSpell) {
     orbAngle: 0,
     stormCharge: 0, echoCount: 0, // Storm Battery charges / Echo Lens cadence
     invuln: 0, hurtFlash: 0,
+    invincT: 0, barrageT: 0, // activatable-pad timers (aegis / barrage)
     moveX: 0, moveY: 0,
     procs: [], buffs: [], spellVulnStacks: [], tempDmg: 1, tempSpd: 1,
     items: [], // purchased items, for the shop display { id, n }
@@ -375,6 +376,7 @@ const game = {
   cones: [], tornadoes: [], // breath-spell visuals & wind tornadoes
   structures: [], structIce: 0, // element landmarks + active ice-slow bonus
   worldSpawns: [], // gold magnet + item mine
+  activatables: [], bombs: [], activatableT: 0, // stand-to-activate pads (bomb/invincible/barrage)
   fountains: [], fountainsSpawned: 0, fountainAt: 0, fountainMax: 1,
   castQueue: [],
   shopOffers: [],
@@ -844,7 +846,7 @@ function armorDamageMult(armor) {
 function damagePlayer(rawDmg, src, target, opts) {
   opts = opts || {};
   const p = target || game.player;
-  if (p.downed || p.invuln > 0 || game.state !== 'playing') return;
+  if (p.downed || p.invuln > 0 || (p.invincT > 0) || game.state !== 'playing') return; // invincible pad
   const st = p.stats;
   if (src) game.lastHurtBy = src; // remember the most recent damage source (cause of death)
   p.spellVulnStacks = (p.spellVulnStacks || []).filter(t => t > 0).slice(-20);
@@ -983,6 +985,7 @@ function restoreRoundSnapshot(s) {
   game.clouds = []; game.meteors = []; game.beams = []; game.novas = []; game.familiars = [];
   game.spawns = []; game.zones = []; game.walls = []; game.cones = []; game.tornadoes = [];
   game.structures = []; game.structIce = 0; game.worldSpawns = [];
+  game.activatables = []; game.bombs = []; game.activatableT = rand(7, 13);
   game.gems = []; game.particles = []; game.texts = [];
   game.dmgMeter = {}; game.castQueue = []; game.fountains = []; game.fountainsSpawned = 0;
   game.hazardT = 5; game.antiCampT = 3; game.dangerEliteDone = false; game.castCount = 0;
@@ -1141,8 +1144,14 @@ function tryCast(spell) {
   const st = p.stats;
   // Storm Battery: spend a stored charge to empower this cast (+60% damage).
   const charged = st.stormBattery && p.stormCharge > 0;
-  const ok = castSpell(spell, charged ? { stormBoost: true } : undefined);
+  const base = charged ? { stormBoost: true } : {};
+  const ok = castSpell(spell, base);
   if (!ok) return false;
+  // Barrage pad: duplicate every cast into two ±45° offset copies
+  if (p.barrageT > 0) {
+    castSpell(spell, { ...base, aimOffset: Math.PI / 4 });
+    castSpell(spell, { ...base, aimOffset: -Math.PI / 4 });
+  }
   game.lastCast = { id: spell.id, tier: spell.tier, enchant: spell.enchant, variant: spell.variant }; // for Mirror Image
   if (charged) p.stormCharge--;
   if (st.doubleCast) game.castQueue.push({ spell, t: 0.05 });
@@ -1162,6 +1171,7 @@ function tryCast(spell) {
 
 function castSpell(spell, opts) {
   opts = opts || {};
+  const aimOff = opts.aimOffset || 0; // Barrage pad: fire duplicate casts at ±45°
   const p = game.player;
   const def = SPELLS[spell.id];
   const ench = spell.enchant;
@@ -1198,7 +1208,7 @@ function castSpell(spell, opts) {
   if (def.breath) {
     const target = nearestEnemy(p.x, p.y, t.range);
     if (!target) return false;
-    const angle = Math.atan2(target.y - p.y, target.x - p.x);
+    const angle = Math.atan2(target.y - p.y, target.x - p.x) + aimOff;
     // breaths start at a tight 45° cone; the Wide Lens item widens it +15° (cap 180°)
     const totalDeg = Math.min(180, 45 + (st.coneDeg || 0));
     const half = (totalDeg / 2) * Math.PI / 180;
@@ -1228,10 +1238,10 @@ function castSpell(spell, opts) {
     case 'missile': {
       const target = nearestEnemy(p.x, p.y, t.range);
       if (!target) return false;
-      const a = Math.atan2(target.y - p.y, target.x - p.x);
+      const a = Math.atan2(target.y - p.y, target.x - p.x) + aimOff;
       game.projectiles.push({
         x: p.x, y: p.y, vx: Math.cos(a) * 520, vy: Math.sin(a) * 520,
-        dmg: t.dmg, r: 5, color: def.color, life: 1.4, homing: target, kind: 'missile', source: 'missile', ench,
+        dmg: t.dmg, r: 5, color: def.color, life: 1.4, homing: aimOff ? null : target, kind: 'missile', source: 'missile', ench,
         tierFx, perfected,
       });
       spellSfx('missile');
@@ -1240,7 +1250,7 @@ function castSpell(spell, opts) {
     case 'fireball': {
       const target = nearestEnemy(p.x, p.y, t.range);
       if (!target) return false;
-      const a = Math.atan2(target.y - p.y, target.x - p.x);
+      const a = Math.atan2(target.y - p.y, target.x - p.x) + aimOff;
       const fspd = 380 * (variant && variant.projMult ? variant.projMult : 1);
       game.projectiles.push({
         x: p.x, y: p.y, vx: Math.cos(a) * fspd, vy: Math.sin(a) * fspd,
@@ -1254,7 +1264,7 @@ function castSpell(spell, opts) {
     case 'frost': {
       const target = nearestEnemy(p.x, p.y, t.range);
       if (!target) return false;
-      const a = Math.atan2(target.y - p.y, target.x - p.x);
+      const a = Math.atan2(target.y - p.y, target.x - p.x) + aimOff;
       game.projectiles.push({
         x: p.x, y: p.y, vx: Math.cos(a) * 440, vy: Math.sin(a) * 440,
         dmg: t.dmg, r: 7, color: def.color, life: t.range / 440 + 0.1,
@@ -1886,6 +1896,97 @@ function updateWorldSpawns(dt) {
   game.worldSpawns = game.worldSpawns.filter(ws => !ws.used);
 }
 
+// ---------------------------------------------------------------------------
+// Activatable pads — stand on one for 1s to trigger its effect.
+//   bomb        — 1.5s fuse, then 30 (×spell dmg) to ALL enemies
+//   invincible  — 5s immunity + enemies take contact damage; golden blink + timer
+//   barrage     — 8s: every spell also fires at ±45°
+// ---------------------------------------------------------------------------
+const ACTIVATABLES = {
+  bomb:       { icon: '💣', color: '#ff7a3c', label: 'BOMB' },
+  invincible: { icon: '🛡️', color: '#ffd454', label: 'AEGIS' },
+  barrage:    { icon: '🎯', color: '#c47bff', label: 'BARRAGE' },
+};
+const ACT_CHANNEL = 1.0; // seconds to stand and activate
+
+function spawnActivatable() {
+  const kind = pick(Object.keys(ACTIVATABLES));
+  const p = game.player;
+  let x = W / 2, y = H / 2;
+  for (let k = 0; k < 24; k++) {
+    x = rand(WALL + 70, W - WALL - 70); y = rand(WALL + 70, H - WALL - 70);
+    if (dist2(x, y, p.x, p.y) > 220 * 220 &&
+        game.activatables.every(o => dist2(x, y, o.x, o.y) > 200 * 200)) break;
+  }
+  game.activatables.push({ kind, x, y, r: 30, prog: 0, t: 0, used: false });
+}
+
+function activatePad(a) {
+  const p = game.player;
+  if (a.kind === 'bomb') {
+    const dmg = Math.round(30 * p.stats.dmgMult);
+    game.bombs.push({ x: a.x, y: a.y, t: 0, dur: 1.5, dmg, radius: 380 }); // huge blast, but not the whole map
+    addText(a.x, a.y - 36, '💣 Armed!', '#ff7a3c', 18);
+  } else if (a.kind === 'invincible') {
+    p.invincT = Math.max(p.invincT || 0, 5);
+    addText(p.x, p.y - 52, '🛡️ INVINCIBLE!', '#ffd454', 20);
+  } else if (a.kind === 'barrage') {
+    p.barrageT = Math.max(p.barrageT || 0, 8);
+    addText(p.x, p.y - 52, '🎯 BARRAGE!', '#c47bff', 20);
+  }
+  sfx('shopLegendary');
+}
+
+function updateActivatables(dt) {
+  const p = game.player;
+  // periodically offer a new pad (max 2 on the map at once)
+  game.activatableT -= dt;
+  if (game.activatableT <= 0) {
+    game.activatableT = rand(12, 20);
+    if (game.activatables.length < 2) spawnActivatable();
+  }
+  for (const a of game.activatables) {
+    const on = livePlayers().some(pl => dist2(a.x, a.y, pl.x, pl.y) <= (a.r + pl.r) ** 2);
+    a.active = on;
+    if (on) {
+      a.prog += dt;
+      if (a.prog >= ACT_CHANNEL) { activatePad(a); a.used = true; }
+    } else {
+      a.prog = Math.max(0, a.prog - dt * 0.6); // slowly drains if you step off
+    }
+  }
+  game.activatables = game.activatables.filter(a => !a.used);
+
+  // bombs: countdown then a single hit to every live enemy
+  for (const b of game.bombs) {
+    b.t += dt;
+    if (b.t >= b.dur && !b.done) {
+      b.done = true;
+      const r = b.radius || 380;
+      for (const e of game.enemies) if (!e.dead && dist2(b.x, b.y, e.x, e.y) <= (r + e.r) ** 2) hitEnemy(e, b.dmg, { source: 'bomb' });
+      game.novas.push({ x: b.x, y: b.y, t: 0, dur: 0.55, radius: r, color: '#ff7a3c' });
+      game.shake = Math.max(game.shake, 14); sfx('boom');
+    }
+  }
+  game.bombs = game.bombs.filter(b => !b.done);
+
+  // invincibility: tick down + damage enemies that touch you (per player)
+  if (p.invincT > 0) {
+    p.invincT -= dt;
+    p.invincTick = (p.invincTick || 0) - dt;
+    if (p.invincTick <= 0) {
+      p.invincTick = 0.3;
+      const reach = p.r + 6;
+      for (const e of game.enemies) {
+        if (e.dead) continue;
+        if (dist2(p.x, p.y, e.x, e.y) <= (reach + e.r) ** 2) hitEnemy(e, Math.round(14 * p.stats.dmgMult), { source: 'nova' });
+      }
+    }
+    if (p.invincT <= 0) p.invincT = 0;
+  }
+  if (p.barrageT > 0) { p.barrageT -= dt; if (p.barrageT <= 0) p.barrageT = 0; }
+}
+
 // Temporary timed buffs (fountains, etc.); fold into tempDmg / tempSpd.
 function updateBuffs(dt) {
   const p = game.player;
@@ -2244,6 +2345,7 @@ function startWave(n) {
   game.structures = [];
   game.structIce = 0;
   game.worldSpawns = [];
+  game.activatables = []; game.bombs = []; game.activatableT = rand(7, 13);
   game.dmgMeter = {};
   game.hazardT = 5; // grace period before the first arcane storm
   game.antiCampT = 3;
@@ -3750,6 +3852,7 @@ function frame(now) {
   updateAntiCampSpell(dt);
     updateTornadoes(dt);
     updateWorldSpawns(dt);
+    updateActivatables(dt);
     updateSpawning(dt);
     updateEnemies(dt);
     updateFamiliars(dt);
@@ -4039,6 +4142,39 @@ function drawZoneTimer(x, y, remaining) {
   ctx.fillStyle = '#eaf2ff';
   ctx.fillText(s + 's', x, y);
   ctx.restore();
+}
+
+// Activatable pads (stand-to-trigger) + ticking bombs.
+function drawActivatables() {
+  const now = performance.now();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  for (const a of game.activatables) {
+    const cfg = ACTIVATABLES[a.kind];
+    const pulse = 0.5 + Math.sin(now / 300) * 0.5;
+    ctx.globalAlpha = a.active ? 0.30 + pulse * 0.25 : 0.16; ctx.fillStyle = cfg.color;
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = a.active ? 0.95 : 0.6; ctx.strokeStyle = cfg.color; ctx.lineWidth = 2;
+    ctx.setLineDash([5, 6]); ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.globalAlpha = 1; ctx.font = '22px sans-serif'; ctx.fillText(cfg.icon, a.x, a.y + 7);
+    ctx.font = 'bold 9px "Segoe UI", sans-serif'; ctx.fillStyle = cfg.color; ctx.fillText(cfg.label, a.x, a.y + a.r + 11);
+    if (a.prog > 0) {
+      ctx.strokeStyle = '#eaf2ff'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(a.x, a.y, a.r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, a.prog / ACT_CHANNEL)); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  for (const b of game.bombs) {
+    if (b.done) continue;
+    const f = b.t / b.dur, r = b.radius || 380, pulse = 0.5 + Math.sin(now / 70) * 0.5;
+    // the full blast radius (dashed danger ring) + an inner fill that swells toward detonation
+    ctx.globalAlpha = 0.10 + f * 0.18; ctx.fillStyle = '#ff7a3c';
+    ctx.beginPath(); ctx.arc(b.x, b.y, r * (0.25 + f * 0.75), 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.4 + pulse * 0.4; ctx.strokeStyle = '#ff7a3c'; ctx.lineWidth = 3; ctx.setLineDash([12, 9]);
+    ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.globalAlpha = 1; ctx.font = '24px sans-serif'; ctx.fillText('💣', b.x, b.y + 8);
+    ctx.fillStyle = '#ffd454'; ctx.font = 'bold 16px "Segoe UI", sans-serif'; ctx.fillText(Math.ceil(b.dur - b.t), b.x, b.y - 24);
+  }
+  ctx.globalAlpha = 1;
 }
 
 // Draws round-effect gadgets (decoy, flashbang, turret, totem) + stun markers.
@@ -4334,6 +4470,9 @@ function render() {
   // gold magnet + item mine world spawns
   for (const ws of game.worldSpawns) drawWorldSpawn(ws);
 
+  // activatable pads (bomb / aegis / barrage) + ticking bombs
+  drawActivatables();
+
   // spawn telegraphs
   for (const s of game.spawns) {
     const prog = s.t / s.delay;
@@ -4446,6 +4585,15 @@ function render() {
     if (p.downed) { drawDownedBody(p); continue; }
     ctx.save();
     ctx.translate(p.x, p.y);
+    // Invincible (Aegis) pad: a blinking golden aura around the wizard
+    if (p.invincT > 0) {
+      const blink = 0.5 + Math.sin(performance.now() / 90) * 0.5;
+      ctx.save();
+      ctx.globalAlpha = 0.22 + blink * 0.38;
+      ctx.fillStyle = '#ffd454'; ctx.shadowColor = '#ffd454'; ctx.shadowBlur = 18;
+      ctx.beginPath(); ctx.arc(0, 0, p.r + 12, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
     if (p.invuln > 0 && Math.floor(p.invuln * 20) % 2 === 0) ctx.globalAlpha = 0.45;
     // arcane shield: stable shield silhouette, not a pulsing bubble
     if (p.shield > 0) drawShieldShape(ctx, 0, 0, p.r + 13, '#8fa8ff', clamp(p.shield / Math.max(1, p.shieldCap || p.shield), 0.45, 1));
@@ -4470,6 +4618,8 @@ function render() {
         ctx.fillRect(bx2, by2 - 4, bw2 * clamp(p.shield / p.shieldCap, 0, 1), 3);
       }
     }
+    // Aegis countdown below the wizard while invincible
+    if (p.invincT > 0) drawZoneTimer(p.x, p.y + 38, p.invincT);
 
     // owned spells arranged in a ring around the wizard, indicating each spell
     {
@@ -4851,18 +5001,26 @@ function drawHUD() {
     ctx.fillStyle = remain < 5 ? '#ffd454' : '#dfe7f2';
     ctx.font = 'bold 34px "Segoe UI", sans-serif';
     ctx.fillText(Math.ceil(remain), W / 2, 80);
-  } else {
-    // combined boss hp bar (covers twin bosses on wave 20)
-    const bosses = game.enemies.filter(e => e.boss);
-    if (bosses.length) {
-      const hp = bosses.reduce((a, b) => a + b.hp, 0);
-      const mhp = bosses.reduce((a, b) => a + b.maxHp, 0);
-      const bbw = 420;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(W / 2 - bbw / 2 - 2, 56, bbw + 4, 16);
-      ctx.fillStyle = '#aa66ff';
-      ctx.fillRect(W / 2 - bbw / 2, 58, bbw * clamp(hp / mhp, 0, 1), 12);
+  }
+  // Boss bar pinned to the top of the screen (combined HP + shield for twins).
+  const bosses = game.enemies.filter(e => e.boss && !e.dead);
+  if (bosses.length) {
+    const hp = bosses.reduce((a, b) => a + b.hp, 0);
+    const mhp = bosses.reduce((a, b) => a + Math.max(1, b.maxHp), 0);
+    const sh = bosses.reduce((a, b) => a + (b.eshield || 0), 0);
+    const shMax = bosses.reduce((a, b) => a + (b.eshieldMax || 0), 0);
+    const bbw = Math.min(560, W - 80), bx = W / 2 - bbw / 2, by = 12, bh = 18;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(bx - 3, by - 3, bbw + 6, bh + (shMax > 0 ? 9 : 6));
+    ctx.fillStyle = '#2a1a3a'; ctx.fillRect(bx, by, bbw, bh);
+    ctx.fillStyle = '#aa66ff'; ctx.fillRect(bx, by, bbw * clamp(hp / mhp, 0, 1), bh);
+    // shield as a thin cyan bar sitting just under the HP bar
+    if (shMax > 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx, by + bh + 1, bbw, 5);
+      ctx.fillStyle = '#5fd0ff'; ctx.fillRect(bx, by + bh + 1, bbw * clamp(sh / shMax, 0, 1), 5);
     }
+    ctx.fillStyle = '#ead8ff'; ctx.font = 'bold 12px "Segoe UI", sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(bosses.length > 1 ? '☠ THE ARCHLICH TWINS' : '☠ THE ARCHLICH', W / 2, by + bh - 4);
   }
 
   // (the bottom-left spell hotbar was removed — spells live in the shop/spellbook)
@@ -4871,7 +5029,7 @@ function drawHUD() {
   game.meterBoxes = [];
   if (game.showMeter) {
     const entries = Object.entries(game.dmgMeter)
-      .filter(([, v]) => v > 0)
+      .filter(([id, v]) => v > 0 && SPELLS[id]) // only per-spell rows (skip bomb/aura sources)
       .sort((a, b) => b[1] - a[1]);
     if (entries.length) {
       const t = Math.max(1, game.waveTime);

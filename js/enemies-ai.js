@@ -100,7 +100,7 @@ function spawnEnemy(type, x, y, opts) {
   // Bats should threaten charges earlier than other ability users.
   if (type === 'bat' || type === 'yellowbat' || type === 'redbat') e.abilityT = rand(1, 2.5);
   // Danger 10: the Archlich rises pre-shielded.
-  if (e.boss && game.danger >= 10) { e.eshield = Math.round(e.maxHp * 0.4); }
+  if (e.boss && game.danger >= 10) { e.eshield = Math.round(e.maxHp * 0.4); e.eshieldMax = e.eshield; }
   game.enemies.push(e);
 }
 
