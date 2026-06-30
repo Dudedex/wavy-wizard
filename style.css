@@ -388,19 +388,30 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 
 /* ---------- shop damage report ---------- */
 #shop-meter {
-  width: min(680px, 96%);
-  margin: 0 auto;
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  width: 250px;
+  margin: 0;
+  z-index: 50;
   display: none;
 }
 .meter-row {
+  position: relative;
   display: flex; justify-content: space-between; gap: 10px;
-  padding: 3px 0;
+  padding: 3px 6px;
   font-size: 13px;
   border-bottom: 1px solid #1d2a44;
 }
 .meter-row:last-child { border-bottom: none; }
-.meter-row .mname { color: #c4d4ee; }
-.meter-row .mnums { color: #eaf2ff; font-weight: 600; white-space: nowrap; }
+.meter-row .mbar {
+  position: absolute; left: 0; top: 2px; bottom: 2px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  z-index: 0; pointer-events: none;
+}
+.meter-row .mname { position: relative; z-index: 1; color: #c4d4ee; }
+.meter-row .mnums { position: relative; z-index: 1; color: #eaf2ff; font-weight: 600; white-space: nowrap; }
 .meter-row .mnums em { color: #8be0ff; font-style: normal; }
 .meter-row .mnums b { color: #9fb0c8; font-weight: 600; }
 .meter-row.total { border-top: 1px solid #2a3a58; margin-top: 3px; padding-top: 6px; }
@@ -725,6 +736,33 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 .ach-toast-head { font-size: 14px; font-weight: 700; color: #ffd454; margin-bottom: 5px; }
 .ach-toast-row { font-size: 13px; color: #eaf2ff; }
 .ach-toast-row .ach-ico { font-size: 16px; }
+
+/* ---------- live achievement pop-ups (bottom-right) ---------- */
+#ach-toasts {
+  position: fixed; right: 16px; bottom: 16px; z-index: 4000;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+  pointer-events: none;
+}
+.ach-pop {
+  display: flex; align-items: center; gap: 12px;
+  min-width: 232px; max-width: 330px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #1c2844, #121a2e);
+  border: 1px solid rgba(255, 212, 84, 0.4);
+  border-left: 4px solid #ffd454;
+  border-radius: 10px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+  /* resting state is visible (so it shows even if animations can't run);
+     the entrance flourish is a keyframe, the exit is the .hide class. */
+  animation: achSlideIn .4s cubic-bezier(.2,.8,.2,1);
+}
+.ach-pop.hide { animation: achSlideOut .4s ease forwards; }
+@keyframes achSlideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes achSlideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(120%); opacity: 0; } }
+.ach-pop-ico { font-size: 26px; line-height: 1; filter: drop-shadow(0 0 6px rgba(255,212,84,.5)); }
+.ach-pop-head { font-size: 10.5px; letter-spacing: .6px; text-transform: uppercase; color: #ffd454; font-weight: 700; }
+.ach-pop-name { font-size: 15px; font-weight: 700; color: #eaf2ff; }
+@media (max-width: 560px) { .ach-pop { min-width: 180px; max-width: 70vw; padding: 8px 11px; } .ach-pop-ico { font-size: 22px; } }
 
 /* ---------- mobile: rotate prompt + touch controls ---------- */
 /* Both hidden by default; main.js adds .is-touch to <body> on touch devices,

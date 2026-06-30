@@ -250,6 +250,7 @@ const LAST_RESORT_TYPES = {
 function freshStats() {
   return {
     maxHp: 60, regen: 0, dmgMult: 1, cdMult: 1, crit: 0.03, critMult: 2,
+    itemStrength: 1, wizgeneer: false, // power of round-affecting items (turrets, gadgets, bombs); Wizgeneer cross-feeds it with spell damage
     speedMult: 1, armor: 0, pickup: 80, matMult: 1,
     priceMult: 1, healMult: 1, reclaim: 0,
     typeMult: { single: 1, aoe: 1, breath: 1, projectile: 1 },
@@ -377,6 +378,7 @@ const game = {
   structures: [], structIce: 0, // element landmarks + active ice-slow bonus
   worldSpawns: [], // gold magnet + item mine
   activatables: [], bombs: [], activatableT: 0, // stand-to-activate pads (bomb/invincible/barrage)
+  pendingChests: [], // item-chest finds awaiting a take/smash choice at wave end
   fountains: [], fountainsSpawned: 0, fountainAt: 0, fountainMax: 1,
   castQueue: [],
   shopOffers: [],
@@ -465,10 +467,17 @@ function spellDamageClass(id) {
 // ---------------------------------------------------------------------------
 // Damage handling
 // ---------------------------------------------------------------------------
+// Wizgeneer converts spell damage <-> item strength, each direction at 60%
+// (i.e. reduced by 40%). For everyone else these just read the raw stats.
+const ITEM_CONV = 0.6;
+function spellPower(st) { return st.wizgeneer ? 1 + ITEM_CONV * (st.itemStrength - 1) : st.dmgMult; }
+function itemPower(st)  { return st.wizgeneer ? 1 + ITEM_CONV * (st.dmgMult - 1)     : st.itemStrength; }
+
 function hitEnemy(e, rawDmg, opts = {}) {
   if (e.dead) return { dmg: 0, crit: false };
   const p = game.player, st = p.stats;
-  let dmg = rawDmg * st.dmgMult * (p.tempDmg || 1) * (opts.scale || 1);
+  // `item` damage (turrets, gadgets, bombs) scales with Item Strength instead of spell damage.
+  let dmg = rawDmg * (opts.item ? itemPower(st) : spellPower(st)) * (p.tempDmg || 1) * (opts.scale || 1);
   const cls = spellDamageClass(opts.source);
   if (cls && st.typeMult && st.typeMult[cls]) dmg *= st.typeMult[cls];
   // Bloodhungry packs move faster but take extra damage.
@@ -636,7 +645,7 @@ function spawnRoundEffect(kind) {
   const w = game.wave;
   if (kind === 'decoy') {
     const pt = gadgetSpawnPoint();
-    game.decoys.push({ x: pt.x, y: pt.y, hits: 0, maxHits: 10, t: 0, dur: 14, wobble: rand(0, 7) });
+    game.decoys.push({ x: pt.x, y: pt.y, hits: 0, maxHits: Math.round(10 * itemPower(game.player.stats)), t: 0, dur: 14, wobble: rand(0, 7) });
     addText(pt.x, pt.y - 28, '🤡 Decoy!', '#ff7be1', 16);
     sfx('shield');
   } else if (kind === 'flash') {
@@ -649,12 +658,12 @@ function spawnRoundEffect(kind) {
   } else if (kind === 'turret') {
     const p = game.player;
     game.turrets.push({ x: clamp(p.x + rand(-40, 40), WALL + 20, W - WALL - 20), y: clamp(p.y + rand(-40, 40), WALL + 20, H - WALL - 20),
-      t: 0, dur: 12, cd: 0.5, dmg: Math.round(8 + w * 2) });
+      t: 0, dur: 12, cd: 0.5, fireCd: 0.5, range: 320, mode: 'beam', source: 'turret', color: '#8be0ff', dmg: Math.round(8 + w * 2) });
     sfx('shield');
   } else if (kind === 'totem') {
     const p = game.player;
     game.totems.push({ x: clamp(p.x + rand(-50, 50), WALL + 20, W - WALL - 20), y: clamp(p.y + rand(-50, 50), WALL + 20, H - WALL - 20),
-      t: 0, dur: 10, tick: 0, heal: Math.round(3 + w * 0.4), radius: 90 });
+      t: 0, dur: 10, tick: 0, heal: Math.round((3 + w * 0.4) * itemPower(game.player.stats)), radius: 90 });
     sfx('heal');
   } else if (kind === 'blackhole') {
     // spawn on the thickest enemy cluster so it actually catches foes
@@ -671,12 +680,60 @@ function spawnRoundEffect(kind) {
   } else if (kind === 'banner') {
     const p = game.player;
     game.banners.push({ x: clamp(p.x, WALL + 20, W - WALL - 20), y: clamp(p.y, WALL + 20, H - WALL - 20),
-      t: 0, dur: 12, radius: 150, bonus: 0.30 });
+      t: 0, dur: 12, radius: 150, bonus: 0.30 * itemPower(game.player.stats) });
     sfx('level');
   } else if (kind === 'bubble') {
     const pt = gadgetSpawnPoint();
     game.bubbles.push({ x: pt.x, y: pt.y, t: 0, dur: 5, radius: 150, slow: 0.6 });
     sfx('frost');
+  }
+}
+
+// Turret Builder spell: drop a permanent (for-this-wave) projectile turret in a
+// small ring around a point. `t` is the spell's (range-modified) tier; its dmg is
+// the turret's base. `quiet` skips the sfx/label (used for the round-start burst).
+function spawnBuilderTurret(x, y, t, quiet) {
+  const a = rand(0, Math.PI * 2), d = rand(28, 64); // scatter a little so they don't stack
+  const tx = clamp(x + Math.cos(a) * d, WALL + 20, W - WALL - 20);
+  const ty = clamp(y + Math.sin(a) * d, WALL + 20, H - WALL - 20);
+  game.turrets.push({
+    x: tx, y: ty,
+    t: 0, dur: 0, permanent: true, mode: 'proj', source: 'builder', color: SPELLS.builder.color,
+    cd: 0.25, fireCd: 0.7, range: t.range || 360, dmg: Math.max(1, Math.round(t.dmg)),
+  });
+  if (!quiet) { addText(tx, ty - 28, '🛠️ Turret!', SPELLS.builder.color, 15); sfx('shield'); }
+}
+
+// At wave start, each owned Turret Builder spell stands up one turret around the
+// player (so multiple copies = multiple turrets). Their build timer is then set to
+// a full cooldown so the first mid-wave rebuild waits the usual ~15s.
+function deployBuilderTurrets() {
+  const p = game.player;
+  const builders = p.spells.filter(s => s.id === 'builder');
+  if (!builders.length) return;
+  for (const sp of builders) {
+    const t = SPELLS.builder.tiers[sp.tier];
+    spawnBuilderTurret(p.x, p.y, t, true);
+    sp.t = t.cd * p.stats.cdMult * (game.modCdMult || 1) * masteryMod('builder').cdMult; // don't rebuild instantly
+  }
+  sfx('shield');
+}
+
+// Sentry Turret item: deploy one permanent turret per copy at wave start, ringed
+// around the player. Damage scales with the wave (and Item Strength at fire-time).
+function deploySentryTurrets() {
+  const p = game.player;
+  const it = (p.items || []).find(i => i.id === 'sentry');
+  if (!it) return;
+  const baseDmg = Math.round(10 + game.wave * 2.2);
+  for (let i = 0; i < it.n; i++) {
+    const ang = (Math.PI * 2 * i) / it.n - Math.PI / 2;
+    game.turrets.push({
+      x: clamp(p.x + Math.cos(ang) * 72, WALL + 20, W - WALL - 20),
+      y: clamp(p.y + Math.sin(ang) * 72, WALL + 20, H - WALL - 20),
+      t: 0, dur: 0, permanent: true, mode: 'proj', source: 'turret', color: '#ffd47a',
+      cd: 0.3 + i * 0.12, fireCd: 0.8, range: 360, dmg: baseDmg,
+    });
   }
 }
 
@@ -715,19 +772,31 @@ function updateRoundEffects(dt) {
   }
   game.flashbangs = game.flashbangs.filter(f => f.t < f.delay + 0.4);
 
-  // turrets — zap the nearest enemy on a cadence
+  // turrets — fire at the nearest enemy on a cadence. 'beam' turrets zap (the
+  // Arcane Turret gadget); 'proj' turrets shoot homing bolts (Sentry item +
+  // Turret Builder spell). Damage is item-scaled (Item Strength / Wizgeneer).
   for (const tr of game.turrets) {
     tr.t += dt; tr.cd -= dt;
     if (tr.cd <= 0) {
-      const tgt = nearestEnemy(tr.x, tr.y, 320);
+      const tgt = nearestEnemy(tr.x, tr.y, tr.range || 320);
       if (tgt) {
-        tr.cd = 0.5;
-        game.beams.push({ pts: [{ x: tr.x, y: tr.y }, { x: tgt.x, y: tgt.y }], t: 0, dur: 0.16, color: '#8be0ff', width: 2.5 });
-        hitEnemy(tgt, tr.dmg, { source: 'lightning' });
+        tr.cd = tr.fireCd || 0.5;
+        const dmg = Math.round(tr.dmg * itemPower(game.player.stats));
+        if (tr.mode === 'proj') {
+          const a = Math.atan2(tgt.y - tr.y, tgt.x - tr.x);
+          const spd = 520;
+          game.projectiles.push({ x: tr.x, y: tr.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+            dmg, r: 6, color: tr.color || '#9be0ff', life: (tr.range || 360) / spd + 0.35,
+            homing: tgt, kind: 'turret', source: tr.source || 'turret', item: true });
+        } else {
+          game.beams.push({ pts: [{ x: tr.x, y: tr.y }, { x: tgt.x, y: tgt.y }], t: 0, dur: 0.16, color: tr.color || '#8be0ff', width: 2.5 });
+          hitEnemy(tgt, dmg, { source: tr.source || 'turret', item: true });
+        }
       }
     }
   }
-  game.turrets = game.turrets.filter(tr => tr.t < tr.dur);
+  // permanent turrets (Sentry / Builder) live the whole wave; gadget turrets age out
+  game.turrets = game.turrets.filter(tr => tr.permanent || tr.t < tr.dur);
 
   // healing totems — pulse-heal living bodies standing nearby
   for (const to of game.totems) {
@@ -985,7 +1054,7 @@ function restoreRoundSnapshot(s) {
   game.clouds = []; game.meteors = []; game.beams = []; game.novas = []; game.familiars = [];
   game.spawns = []; game.zones = []; game.walls = []; game.cones = []; game.tornadoes = [];
   game.structures = []; game.structIce = 0; game.worldSpawns = [];
-  game.activatables = []; game.bombs = []; game.activatableT = rand(7, 13);
+  game.activatables = []; game.bombs = []; game.activatableT = rand(7, 13); game.pendingChests = [];
   game.gems = []; game.particles = []; game.texts = [];
   game.dmgMeter = {}; game.castQueue = []; game.fountains = []; game.fountainsSpawned = 0;
   game.hazardT = 5; game.antiCampT = 3; game.dangerEliteDone = false; game.castCount = 0;
@@ -1371,6 +1440,11 @@ function castSpell(spell, opts) {
       if (perfected) grantArmorBuff(6, 3); // T4: a burst of armor on each cast
       spellSfx('nova');
       return true; // fire even with no hits — it is also a visual heartbeat
+    }
+    case 'builder': {
+      // Builds a turret at the caster's feet that fires for the rest of the wave.
+      spawnBuilderTurret(p.x, p.y, t);
+      return true;
     }
   }
   return false;
@@ -1858,11 +1932,10 @@ function updateStructures(dt) {
 // (channel 5s for a random item).
 function grantMineItem(ws) {
   const it = pick(ITEMS); // items only, never spells
-  if (it.apply) it.apply(game.player.stats);
-  if (it.proc) addProcItem(it.id);
-  recordItem(it.id);
-  game.player.hp = Math.min(game.player.hp, game.player.stats.maxHp);
-  addText(ws.x, ws.y - 30, `Mined: ${it.icon} ${it.name}!`, '#ffd454', 17);
+  // Don't apply now — bank it; at wave end you choose to take it or smash it for gold.
+  game.pendingChests.push(it.id);
+  addText(ws.x, ws.y - 30, `Found: ${it.icon} ${it.name}!`, '#ffd454', 17);
+  addText(ws.x, ws.y - 12, 'Decide at wave end', '#9fb0c8', 12);
   burst(ws.x, ws.y, '#ffd454', 26, 220, 0.6);
   sfx('level');
   if (lastSecondsOfWave()) unlockAch('sleight'); // "Sleight of Hands"
@@ -1875,8 +1948,8 @@ function updateWorldSpawns(dt) {
     const on = dist2(ws.x, ws.y, p.x, p.y) <= (ws.r + p.r) ** 2;
     ws.active = on;
     if (ws.kind === 'magnet') {
-      if (on) { // drag every gold gem toward the magnet (≈ whole map in 8s)
-        const spd = 175;
+      if (on) { // drag every gold gem toward the magnet (≈ whole map in 8s; item strength pulls faster)
+        const spd = 175 * itemPower(game.player.stats);
         for (const g of game.gems) {
           if (g.hp) continue; // gold only, not health pickups
           const d = Math.max(1, Math.hypot(ws.x - g.x, ws.y - g.y));
@@ -1924,8 +1997,8 @@ function spawnActivatable() {
 function activatePad(a) {
   const p = game.player;
   if (a.kind === 'bomb') {
-    const dmg = Math.round(30 * p.stats.dmgMult);
-    game.bombs.push({ x: a.x, y: a.y, t: 0, dur: 1.5, dmg, radius: 380 }); // huge blast, but not the whole map
+    const dmg = Math.round(95 + game.wave * 8); // hard-hitting; item-scaled at detonation (see updateActivatables)
+    game.bombs.push({ x: a.x, y: a.y, t: 0, dur: 1.5, dmg, radius: 230 }); // tighter blast than before, but it hits hard
     addText(a.x, a.y - 36, '💣 Armed!', '#ff7a3c', 18);
   } else if (a.kind === 'invincible') {
     p.invincT = Math.max(p.invincT || 0, 5);
@@ -1963,7 +2036,7 @@ function updateActivatables(dt) {
     if (b.t >= b.dur && !b.done) {
       b.done = true;
       const r = b.radius || 380;
-      for (const e of game.enemies) if (!e.dead && dist2(b.x, b.y, e.x, e.y) <= (r + e.r) ** 2) hitEnemy(e, b.dmg, { source: 'bomb' });
+      for (const e of game.enemies) if (!e.dead && dist2(b.x, b.y, e.x, e.y) <= (r + e.r) ** 2) hitEnemy(e, b.dmg, { source: 'bomb', item: true });
       game.novas.push({ x: b.x, y: b.y, t: 0, dur: 0.55, radius: r, color: '#ff7a3c' });
       game.shake = Math.max(game.shake, 14); sfx('boom');
     }
@@ -2345,7 +2418,7 @@ function startWave(n) {
   game.structures = [];
   game.structIce = 0;
   game.worldSpawns = [];
-  game.activatables = []; game.bombs = []; game.activatableT = rand(7, 13);
+  game.activatables = []; game.bombs = []; game.activatableT = rand(7, 13); game.pendingChests = [];
   game.dmgMeter = {};
   game.hazardT = 5; // grace period before the first arcane storm
   game.antiCampT = 3;
@@ -2435,6 +2508,8 @@ function startWave(n) {
     reviveAll();
   }
   setState('playing');
+  deploySentryTurrets(); // Sentry item: stand up its turret(s) for the whole wave
+  deployBuilderTurrets(); // Turret Builder spell(s): one turret per copy at wave start
   addText(W / 2, H / 2 - 60, n === 20 ? 'FINAL WAVE' : 'WAVE ' + n, '#8be0ff', 30);
   if (HORDE_WAVES.includes(n)) addText(W / 2, H / 2 - 26, 'THE HORDE COMES!', '#ff8a5a', 22);
   // Authored combo wave: announce it and let it intensify hazards if it wants
@@ -2522,6 +2597,13 @@ function afterWaveCollected() {
     document.getElementById('win-board').innerHTML = scoreboardHTML(hlId);
     return;
   }
+  // Item chests collected this wave: let the player take or smash each first.
+  if (game.pendingChests && game.pendingChests.length) { showChestChoice(); return; }
+  afterChestChoice();
+}
+
+// Continue the normal post-wave progression once chest choices are resolved.
+function afterChestChoice() {
   if (game.pendingMightyBoosts > 0) showMightyLevelUp();
   else {
     checkMastery();
@@ -2529,6 +2611,62 @@ function afterWaveCollected() {
     else if (game.pendingLevelUps > 0) showLevelUp();
     else openShop();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Item-chest choice — take the rolled item, or destroy it for gold.
+// ---------------------------------------------------------------------------
+function chestDestroyGold(it) {
+  return Math.max(8, Math.round(itemPrice(it) * 0.6));
+}
+function showChestChoice() { setState('chestchoice'); renderChestChoice(); }
+function renderChestChoice() {
+  const row = document.getElementById('chest-cards');
+  if (!row) return;
+  row.innerHTML = '';
+  const id = game.pendingChests[0];
+  const it = ITEMS.find(i => i.id === id);
+  if (!it) { resolveChest(true); return; }
+  const sub = document.getElementById('chest-sub');
+  if (sub) sub.textContent = game.pendingChests.length > 1
+    ? `${game.pendingChests.length} chests to decide` : 'A chest awaits your decision';
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="icon">${it.icon}</div>
+    <div class="name">${it.name}</div>
+    <div class="tier-badge" style="color:#9aa7b8">Item</div>
+    <div class="desc">${signColor(it.desc)}</div>`;
+  const take = document.createElement('button');
+  take.className = 'buy-btn'; take.textContent = '✓ Take it';
+  take.onclick = () => resolveChest(true);
+  card.appendChild(take);
+  const gold = chestDestroyGold(it);
+  const smash = document.createElement('button');
+  smash.className = 'buy-btn sell-btn'; smash.style.marginTop = '6px';
+  smash.textContent = `💥 Smash — +${gold}g`;
+  smash.onclick = () => resolveChest(false);
+  card.appendChild(smash);
+  row.appendChild(card);
+}
+function resolveChest(take) {
+  const id = game.pendingChests.shift();
+  const it = id && ITEMS.find(i => i.id === id);
+  if (it) {
+    if (take) {
+      if (it.apply) it.apply(game.player.stats);
+      if (it.proc) addProcItem(it.id);
+      recordItem(it.id);
+      game.player.hp = Math.min(game.player.hp, game.player.stats.maxHp);
+      sfx('shopBuy');
+    } else {
+      const g = chestDestroyGold(it);
+      game.gold += g; game.goldEarned += g;
+      sfx('shopSell');
+    }
+  }
+  if (game.pendingChests.length) renderChestChoice();
+  else { saveRun(); afterChestChoice(); }
 }
 
 // Detect spells that crossed a new mastery threshold (cumulative run damage).
@@ -2584,7 +2722,7 @@ function showMastery() {
 // ---------------------------------------------------------------------------
 // State / overlays
 // ---------------------------------------------------------------------------
-const overlays = ['title', 'charselect', 'dangerselect', 'spellselect', 'settings', 'achievements', 'levelup', 'mastery', 'shop', 'pause', 'gameover', 'win'];
+const overlays = ['title', 'charselect', 'dangerselect', 'spellselect', 'settings', 'achievements', 'chestchoice', 'levelup', 'mastery', 'shop', 'pause', 'gameover', 'win'];
 
 // Accessibility / readability toggles, shown on the settings screen.
 const SETTINGS = [
@@ -2599,6 +2737,7 @@ const SETTINGS = [
 const SOUNDTRACK_CHOICES = [
   { id: 'smooth', label: 'Moonlit Groove' },
   { id: 'breakbeat', label: 'Bass Breakbeat' },
+  { id: 'edm', label: 'Jump Arcade (EDM)' },
 ];
 
 function renderSettings() {
@@ -2753,6 +2892,7 @@ function renderKeybinds() {
     ['Armor', `${effectiveArmorFor(p)} (${armorReductionPct(effectiveArmorFor(p))}% DR)`],
     ['Regen', `${s.regen.toFixed(1)}/s`],
     ['Damage', pct(s.dmgMult)],
+    ['Item strength', pct(itemPower(s))],
     ['Cooldowns', pct(s.cdMult)],
     ['Move speed', pct(s.speedMult)],
     ['Crit', `${Math.round(s.crit * 100)}% ×${s.critMult.toFixed(1)}`],
@@ -2995,6 +3135,24 @@ function achievementContext(won) {
   };
 }
 
+// Slide-in pop-up in the bottom-right corner when an achievement is earned.
+// Multiple stack upward; each auto-dismisses after a few seconds.
+function showAchToast(a) {
+  if (!a) return;
+  const wrap = document.getElementById('ach-toasts');
+  if (!wrap) return;
+  const el = document.createElement('div');
+  el.className = 'ach-pop';
+  el.innerHTML = `<span class="ach-pop-ico">${a.icon || '🏅'}</span>` +
+    `<div class="ach-pop-txt"><div class="ach-pop-head">🏅 Achievement Unlocked</div>` +
+    `<div class="ach-pop-name">${a.name}</div></div>`;
+  wrap.appendChild(el); // visible at rest; the .ach-pop keyframe slides it in
+  setTimeout(() => {
+    el.classList.add('hide');
+    setTimeout(() => el.remove(), 450);
+  }, 4200);
+}
+
 // Unlock a single achievement immediately (used by live, event-driven triggers
 // during play). Shows a floating in-game toast and a one-off sound.
 function unlockAch(id) {
@@ -3007,6 +3165,7 @@ function unlockAch(id) {
   try { localStorage.setItem(ACH_KEY, JSON.stringify(earned)); } catch (e) { /* private mode */ }
   const p = game.player;
   if (p && typeof addText === 'function') addText(p.x, p.y - 72, `🏅 ${a.name}`, '#ffd454', 18);
+  showAchToast(a);
   try { sfx('buy'); } catch (e) { /* audio not ready */ }
   return true;
 }
@@ -3057,6 +3216,7 @@ function unlockAchievements(won) {
   }
   if (fresh.length) {
     try { localStorage.setItem(ACH_KEY, JSON.stringify(earned)); } catch (e) { /* private mode */ }
+    fresh.forEach((a, i) => setTimeout(() => showAchToast(a), i * 600)); // stagger corner pop-ups
   }
   return fresh;
 }
@@ -4430,9 +4590,13 @@ function render() {
   for (const w of game.walls) {
     const fade = w.t > w.dur - 0.6 ? (w.dur - w.t) / 0.6 : 1;
     ctx.fillStyle = `rgba(143, 168, 255, ${0.16 * fade})`;
-    ctx.strokeStyle = `rgba(170, 195, 255, ${0.7 * fade})`;
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2); ctx.fill();
+    // thick black border so the impassable edge reads clearly (like the map wall)
+    ctx.lineWidth = 5; ctx.strokeStyle = `rgba(7, 9, 18, ${0.92 * fade})`;
+    ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2); ctx.stroke();
+    // a thin blue rim just inside the black border
+    ctx.lineWidth = 2; ctx.strokeStyle = `rgba(170, 195, 255, ${0.7 * fade})`;
+    ctx.beginPath(); ctx.arc(w.x, w.y, w.r - 3, 0, Math.PI * 2); ctx.stroke();
     // hatch marks for a "solid wall" read
     ctx.globalAlpha = fade;
     ctx.fillStyle = '#aac3ff';

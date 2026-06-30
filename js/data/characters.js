@@ -104,6 +104,12 @@ const CHARACTERS = [
     apply: s => { s.rando = true; },
   },
   {
+    id: 'wizgeneer', name: 'Gizmo', title: 'the Wizgeneer',
+    look: { robe: '#4a6a2d', hat: '#33491e', orb: '#ffd47a', trim: '#d7ff8a', hasHat: true, hasStaff: true, robot: true },
+    perks: ['Spell damage powers your items, and item strength powers your spells', 'Both conversions are reduced by 40%', 'Build turrets & gadgets, or buff them — either path feeds the other'],
+    apply: s => { s.wizgeneer = true; },
+  },
+  {
     id: 'cursedking', name: 'Mordred', title: 'the Cursed King',
     look: { robe: '#7a2d3a', hat: '#541d28', orb: '#ff6b6b', trim: '#ffd454', hasHat: true, hasStaff: true, horn: true },
     perks: ['+40% spell damage', 'Lose 8 max HP each wave unless you bought a relic last shop'],

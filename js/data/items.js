@@ -14,6 +14,7 @@ const ITEMS = [
   { id: 'hourglass',name:'Hourglass',      icon: '⏳', desc: '-7% spell cooldowns',          price: 26, apply: s => s.cdMult *= 0.93 },
   { id: 'clover',  name: 'Lucky Clover',   icon: '🍀', desc: '+8% crit chance',              price: 22, apply: s => s.crit += 0.08 },
   { id: 'magnet',  name: 'Magnet Stone',   icon: '🧲', desc: '+30 pickup range',             price: 14, apply: s => s.pickup += 30 },
+  { id: 'toolkit', name: "Engineer's Toolkit", icon: '🧰', desc: '+20% item strength (turrets, gadgets, bombs…)', price: 26, apply: s => s.itemStrength += 0.20 },
   { id: 'idol',    name: 'Greedy Idol',    icon: '🗿', desc: '+20% materials from enemies',  price: 28, apply: s => s.matMult += 0.20 },
   { id: 'wand',    name: 'Crystal Wand',   icon: '🪄', desc: '+6% damage, -3% cooldowns',    price: 32, apply: s => { s.dmgMult += 0.06; s.cdMult *= 0.97; } },
   { id: 'robe',    name: 'Warding Robe',   icon: '🥋', desc: '+10 max HP, +1 armor',         price: 26, apply: s => { s.maxHp += 10; s.armor += 1; } },
@@ -63,6 +64,7 @@ const ITEMS = [
   { id: 'decoy',   name: 'Decoy Clown',   icon: '🤡', desc: 'Every 20s a clown decoy appears that taunts enemies and soaks 10 hits', price: 30, roundEffect: { interval: 20, kind: 'decoy' } },
   { id: 'flash',   name: 'Flashbang',     icon: '🧨', desc: 'Every 10s a flashbang drops, detonating after 1s to stun enemies for 3s', price: 28, roundEffect: { interval: 10, kind: 'flash' } },
   { id: 'turret',  name: 'Arcane Turret', icon: '🗼', desc: 'Every 16s deploys a turret that zaps nearby enemies for 12s', price: 34, roundEffect: { interval: 16, kind: 'turret' } },
+  { id: 'sentry',  name: 'Sentry Turret', icon: '🛰️', desc: 'At wave start, deploys a turret that fires at enemies in medium range for the whole wave (scales with item strength)', price: 42, sentry: true },
   { id: 'totem',   name: 'Healing Totem', icon: '🪅', desc: 'Every 22s drops a totem that heals you while you stand near it', price: 30, roundEffect: { interval: 22, kind: 'totem' } },
   { id: 'blackhole', name: 'Black Hole Orb', icon: '🕳️', desc: 'Every 25s a singularity pulls enemies in, then bursts', price: 36, roundEffect: { interval: 25, kind: 'blackhole' } },
   { id: 'mirror',  name: 'Mirror Image',  icon: '👥', desc: 'Every 18s a clone appears that recasts your last spell at half power', price: 34, roundEffect: { interval: 18, kind: 'mirror' } },
@@ -82,6 +84,7 @@ const LEVELUP_OPTIONS = [
   { name: 'Precision',  icon: '🎯', desc: '+4% crit chance',   apply: s => s.crit += 0.04 },
   { name: 'Mending',    icon: '💚', desc: '+0.45 HP / sec',    apply: s => s.regen += 0.45 },
   { name: 'Greed',      icon: '🧲', desc: '+15 pickup range, +8% materials', apply: s => { s.pickup += 15; s.matMult += 0.08; } },
+  { name: 'Machinist',  icon: '🧰', desc: '+8% item strength', apply: s => s.itemStrength += 0.08 },
 ];
 
 const MIGHTY_LEVELUP_OPTIONS = [
@@ -93,4 +96,5 @@ const MIGHTY_LEVELUP_OPTIONS = [
   { name: 'Mighty Precision',  icon: '🎯', desc: '+20% crit chance',   apply: s => s.crit += 0.20 },
   { name: 'Mighty Mending',    icon: '💚', desc: '+2.25 HP / sec',     apply: s => s.regen += 2.25 },
   { name: 'Mighty Greed',      icon: '🧲', desc: '+75 pickup range, +40% materials', apply: s => { s.pickup += 75; s.matMult += 0.40; } },
+  { name: 'Mighty Machinist',  icon: '🧰', desc: '+30% item strength', apply: s => s.itemStrength += 0.30 },
 ];

@@ -55,6 +55,33 @@ const BREAKBEAT_STABS = [
   null, null, 392.00, null, null, 440.00, null, null,
   493.88, null, null, null, 554.37, null, 493.88, null,
 ];
+// "Jump Arcade" — an EDM jumpstyle groove: a hard 4-on-the-floor kick, the
+// signature OFFBEAT "jump" bass bouncing between the kicks, claps on 2 & 4,
+// offbeat hats, supersaw chord stabs, and a catchy pentatonic pluck riff. One
+// chord per bar over an anthemic Am–F–C–G (16 sixteenth-steps per bar).
+const EDM_STEP = 0.125;
+const EDM_PATTERN = [
+  { root: 110.00, fifth: 164.81, top: 440.00 },  // Am
+  { root: 87.31,  fifth: 130.81, top: 349.23 },  // F
+  { root: 130.81, fifth: 196.00, top: 523.25 },  // C
+  { root: 98.00,  fifth: 146.83, top: 392.00 },  // G
+];
+// A minor-pentatonic riff (A C D E G) that sits over the whole progression.
+const EDM_LEAD = [
+  659.25, null,   587.33, null,   523.25, null,   587.33, 659.25,
+  null,   523.25, null,   440.00, null,   523.25, 587.33, null,
+];
+// Second base rhythm's riff — brighter, octave-leaning answer phrase.
+const EDM_LEAD_B = [
+  880.00, null,   783.99, 659.25, null,   783.99, null,   659.25,
+  587.33, null,   659.25, null,   783.99, null,   880.00, null,
+];
+// Track structure: rhythm A (64 sixteenths) → rhythm B (64) → a 3-step DROP,
+// then loop. "Two base rhythms" with a short drop fill that relaunches part A.
+const EDM_A_LEN = 64;
+const EDM_B_LEN = 64;
+const EDM_DROP_LEN = 3;
+const EDM_CYCLE = EDM_A_LEN + EDM_B_LEN + EDM_DROP_LEN; // 131 steps total
 
 function ensureAudio(startMusic = true) {
   if (muted || pageAudioMuted) return false;
@@ -82,7 +109,9 @@ function withAudioCategory(category, fn) {
 }
 
 function soundtrackMode() {
-  return typeof game !== 'undefined' && game.opt && game.opt.soundtrack === 'breakbeat' ? 'breakbeat' : 'smooth';
+  const st = typeof game !== 'undefined' && game.opt ? game.opt.soundtrack : null;
+  if (st === 'breakbeat' || st === 'edm') return st;
+  return 'smooth';
 }
 
 function getAudioOutput() {
@@ -148,7 +177,10 @@ function musicLevel() {
 }
 
 function currentMusicStep() {
-  return soundtrackMode() === 'breakbeat' ? BREAKBEAT_STEP : SMOOTH_STEP;
+  const m = soundtrackMode();
+  if (m === 'breakbeat') return BREAKBEAT_STEP;
+  if (m === 'edm') return EDM_STEP;
+  return SMOOTH_STEP;
 }
 
 function scheduleMusicTone(freq, start, dur, type, vol, dest, pan = 0, bend = 1) {
@@ -257,8 +289,88 @@ function scheduleBreakbeatStep() {
   music.step++;
 }
 
+// One 64-step base rhythm. `variant` 'A' is the core jumpstyle groove; 'B' is a
+// busier "second base rhythm" (rolling double-bounce bass + brighter riff) that
+// answers A before the drop. All tonal (no noise) so it stays click-free.
+function edmRhythm(cycle, t, step, variant) {
+  const bar = Math.floor(cycle / 16);
+  const chord = EDM_PATTERN[bar % EDM_PATTERN.length];
+  const s = cycle % 16;                      // step within the bar
+  const b = variant === 'B';
+
+  // Supersaw chord stab: long one each bar, shorter lift at the half-bar.
+  if (s === 0 || s === 8) {
+    const padDur = step * (s === 0 ? 7.6 : 3.6);
+    const oct = b ? 4 : 2;                    // B voices the stab an octave up
+    scheduleMusicTone(chord.root * oct, t, padDur, 'sawtooth', 0.013, music.pad, -0.22, 1.0);
+    scheduleMusicTone(chord.fifth * oct, t + 0.012, padDur, 'sawtooth', 0.0098, music.pad, 0.2, 1.0);
+    scheduleMusicTone(chord.top * (b ? 2 : 1), t + 0.024, padDur, 'triangle', 0.0072, music.pad, 0.34, 1.0);
+  }
+
+  // 4-on-the-floor kick: low sine with a hard downward pitch-bend = punch.
+  if (s % 4 === 0) scheduleMusicTone(125, t, step * 1.12, 'sine', 0.036, music.pad, 0, 0.33);
+
+  // Jumpstyle bass. A: one offbeat stab between kicks. B: rolling double-bounce.
+  if (s % 4 === 2 || (b && s % 4 === 3)) {
+    const dur = b ? step * 0.62 : step * 0.92;
+    scheduleMusicTone(chord.root, t, dur, 'sawtooth', b ? 0.026 : 0.030, music.pad, -0.05, 0.99);
+    scheduleMusicTone(chord.root * 2, t + step * 0.02, step * 0.55, 'triangle', 0.0085, music.pad, 0.05, 1.0);
+  }
+
+  // Clap/snare on beats 2 & 4 (tonal burst, soft attack — no noise click).
+  if (s === 4 || s === 12) {
+    scheduleMusicTone(220, t + step * 0.01, step * 0.5, 'triangle', 0.013, music.sparkle, 0.1, 0.8);
+    scheduleMusicTone(900, t + step * 0.02, step * 0.3, 'sine', 0.0042, music.sparkle, -0.1, 1.05);
+  }
+
+  // Hats: A on offbeat 8ths; B busier (every step) for lift.
+  if (b ? true : s % 2 === 1) {
+    scheduleMusicTone(1760, t + step * 0.04, step * 0.3, 'sine', b ? 0.0018 : 0.0024, music.sparkle, s % 4 === 1 ? -0.26 : 0.26, 1.0);
+  }
+
+  // Pluck riff (B uses the brighter answer phrase).
+  const lead = (b ? EDM_LEAD_B : EDM_LEAD)[cycle % EDM_LEAD.length];
+  if (lead) {
+    scheduleMusicTone(lead, t + step * 0.03, step * 1.05, 'sawtooth', 0.0078, music.sparkle, 0.12, 1.0);
+    scheduleMusicTone(lead * 0.5, t + step * 0.05, step * 0.85, 'triangle', 0.0032, music.sparkle, -0.18, 1.0);
+  }
+}
+
+// The 3-step DROP fill that caps the two rhythms before the loop relaunches:
+// (0) a big downward impact + low rumble, (1) a breath/gap with a soft tick,
+// (2) an upward riser sweeping tension back into rhythm A's first kick.
+function edmDrop(i, t, step) {
+  if (i === 0) {
+    scheduleMusicTone(330, t, step * 2.6, 'sawtooth', 0.024, music.pad, 0, 0.2);   // descending impact
+    scheduleMusicTone(70, t, step * 2.8, 'sine', 0.030, music.pad, 0, 0.6);        // sub rumble
+    scheduleMusicTone(110, t, step * 0.9, 'sine', 0.034, music.pad, 0, 0.33);      // one last kick
+  } else if (i === 1) {
+    scheduleMusicTone(1320, t + step * 0.3, step * 0.5, 'sine', 0.0024, music.sparkle, 0.2, 1.0); // soft tick in the gap
+  } else {
+    scheduleMusicTone(220, t, step * 1.4, 'sawtooth', 0.018, music.sparkle, 0, 3.4); // riser sweeping UP into the loop
+    scheduleMusicTone(440, t + step * 0.1, step * 1.2, 'triangle', 0.008, music.sparkle, 0, 2.6);
+  }
+}
+
+// "Jump Arcade" EDM: rhythm A → rhythm B → 3-step drop → loop.
+function scheduleEdmStep() {
+  if (!music || muted || pageAudioMuted || audioVolume() <= 0) return;
+  const m = music.step % EDM_CYCLE;
+  const t = music.next;
+  const step = currentMusicStep();
+
+  if (m < EDM_A_LEN) edmRhythm(m, t, step, 'A');
+  else if (m < EDM_A_LEN + EDM_B_LEN) edmRhythm(m - EDM_A_LEN, t, step, 'B');
+  else edmDrop(m - EDM_A_LEN - EDM_B_LEN, t, step);
+
+  music.next += step;
+  music.step++;
+}
+
 function scheduleMusicStep() {
-  if (soundtrackMode() === 'breakbeat') scheduleBreakbeatStep();
+  const m = soundtrackMode();
+  if (m === 'breakbeat') scheduleBreakbeatStep();
+  else if (m === 'edm') scheduleEdmStep();
   else scheduleSmoothStep();
 }
 

@@ -166,6 +166,21 @@ const SPELLS = {
     ],
     lines: t => [`Damage: ${t.dmg} (cone)`, `Tornadoes: 5s, 33% dmg`, `Cooldown: ${t.cd}s`],
   },
+  // Builder: doesn't attack directly — every cast (15s, reduced by cooldown) it
+  // constructs an auto-turret at your feet that fires for the rest of the wave.
+  // Higher tiers build sturdier turrets (more base damage). Turret output scales
+  // with the Item Strength attribute (it deals "item" damage, not spell damage).
+  builder: {
+    name: 'Turret Builder', icon: '🛠️', color: '#9be0ff', builder: true,
+    desc: 'Builds an auto-turret beside you at wave start (one per copy owned), then another every 15s. Turrets fire for the rest of the wave.',
+    tiers: [
+      { dmg: 14, cd: 15, range: 360, price: 24 },
+      { dmg: 22, cd: 15, range: 380, price: 50 },
+      { dmg: 34, cd: 15, range: 410, price: 96 },
+      { dmg: 52, cd: 15, range: 440, price: 170 },
+    ],
+    lines: t => [`Turret damage: ${t.dmg}`, `Builds every ${t.cd}s (−cooldown)`, `Turret range: ${t.range}`, `Turrets scale with Item Strength`],
+  },
 };
 
 // Fusion payoff: every spell's MAX tier (IV) gains a unique "perfected" behavior

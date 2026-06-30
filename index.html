@@ -11,6 +11,9 @@
   <canvas id="game" width="1280" height="720"></canvas>
   <div id="tooltip"></div>
 
+  <!-- Achievement pop-ups (slide in at the bottom-right when earned) -->
+  <div id="ach-toasts" aria-live="polite"></div>
+
   <!-- Mobile: transparent on-screen controls (only shown on touch devices while playing) -->
   <div id="touch-controls" aria-hidden="true">
     <div id="touch-stick">
@@ -89,6 +92,13 @@
     <h2>CHOOSE YOUR STARTING SPELL</h2>
     <p class="subtitle">Free, at Tier I. The rest you'll buy with blood and gold.</p>
     <div id="spell-cards" class="card-row wide"></div>
+  </div>
+
+  <!-- Item chest choice: take the rolled item or smash it for gold -->
+  <div id="chestchoice" class="overlay">
+    <h2>📦 ITEM CHEST</h2>
+    <p id="chest-sub" class="subtitle">A chest awaits your decision</p>
+    <div id="chest-cards" class="card-row"></div>
   </div>
 
   <!-- Level up screen -->

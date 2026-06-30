@@ -5,6 +5,17 @@
 // ===========================================================================
 
 
+// Rounded-rect path helper (arcTo is widely supported) for the robot face plate.
+function wizardRoundRect(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+
 function wizardAlpha(col, alpha) {
   if (col && col[0] === '#' && col.length === 7) {
     const n = parseInt(col.slice(1), 16);
@@ -135,36 +146,81 @@ function drawWizardSprite(g, look, face, time, hurt, walk = 0) {
   g.fillStyle = '#6b3f1d';
   g.fillRect(-1.8, 0.5, 3.6, 4);
 
-  // head
-  g.fillStyle = hurt ? '#ffb0a0' : '#f2c9a0';
-  g.beginPath(); g.arc(0, -11, 7, 0, Math.PI * 2); g.fill();
-
-  // facial hair / hair (varies the silhouette)
-  if (look.hair) {
-    g.fillStyle = look.hair;
-    g.beginPath();
-    g.moveTo(-7, -10);
-    g.quadraticCurveTo(-8, -19, 0, -19);
-    g.quadraticCurveTo(8, -19, 7, -10);
-    g.quadraticCurveTo(0, -14, -7, -10);
-    g.closePath(); g.fill();
-    g.fillRect(-8, -13, 2.4, 9); g.fillRect(5.6, -13, 2.4, 9); // side locks
-  } else if (look.bald) {
-    g.fillStyle = 'rgba(255,255,255,0.22)';
-    g.beginPath(); g.ellipse(-2, -13, 2.6, 1.5, 0, 0, Math.PI * 2); g.fill(); // shine
-  } else {
-    g.fillStyle = '#e9edf5'; // classic beard
-    g.beginPath(); g.moveTo(-6, -10); g.quadraticCurveTo(0, 1, 6, -10); g.closePath(); g.fill();
+  // robot: a glowing power core peeking through the robe
+  if (look.robot) {
+    const core = look.orb || '#ffd47a';
+    const glow = 0.5 + Math.sin(time * 4) * 0.5;
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.fillStyle = wizardAlpha(core, 0.4 + glow * 0.5);
+    g.shadowColor = core; g.shadowBlur = 6 + glow * 6;
+    g.beginPath(); g.arc(0, -3.5, 2.3, 0, Math.PI * 2); g.fill();
+    g.restore();
   }
 
-  // eyes (look toward facing)
-  g.fillStyle = '#101418';
-  g.beginPath(); g.arc(-2.5 + face * 1.5, -12, 1.4, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(2.5 + face * 1.5, -12, 1.4, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = 'rgba(70,40,25,0.55)';
-  g.lineWidth = 0.8;
-  g.beginPath(); g.moveTo(-5 + face * 1.2, -14.5); g.lineTo(-1 + face * 1.2, -14.1); g.stroke();
-  g.beginPath(); g.moveTo(1 + face * 1.2, -14.1); g.lineTo(5 + face * 1.2, -14.5); g.stroke();
+  if (look.robot) {
+    // A robot wearing the wizard's clothes: brushed-metal face plate, glowing
+    // LED eyes, a grille "mouth", and rivets. The hat/robe still go on top.
+    const eye = look.orb || '#ffd47a';
+    const blink = 0.5 + Math.sin(time * 5.5) * 0.5;
+    // metal head plate
+    g.fillStyle = hurt ? '#b06a64' : '#9aa6b4';
+    wizardRoundRect(g, -7, -18, 14, 14, 3.5); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 1; g.stroke();
+    // brushed highlight + face seam
+    g.fillStyle = 'rgba(255,255,255,0.16)';
+    wizardRoundRect(g, -6, -17.5, 12, 3.6, 1.8); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.22)'; g.lineWidth = 0.7;
+    g.beginPath(); g.moveTo(-7, -9.5); g.lineTo(7, -9.5); g.stroke();
+    // side rivets
+    g.fillStyle = '#6c7682';
+    g.beginPath(); g.arc(-7.4, -11, 1.4, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(7.4, -11, 1.4, 0, Math.PI * 2); g.fill();
+    // glowing LED eyes
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.fillStyle = wizardAlpha(eye, 0.45 + blink * 0.55);
+    g.shadowColor = eye; g.shadowBlur = 6;
+    g.fillRect(-4.6 + face * 1.1, -13.8, 3, 2.5);
+    g.fillRect(1.6 + face * 1.1, -13.8, 3, 2.5);
+    g.restore();
+    // mouth grille
+    g.strokeStyle = 'rgba(18,24,32,0.85)'; g.lineWidth = 0.7;
+    for (let i = -3; i <= 3; i += 1.5) { g.beginPath(); g.moveTo(i, -8.4); g.lineTo(i, -6); g.stroke(); }
+    g.strokeStyle = 'rgba(18,24,32,0.6)';
+    g.beginPath(); g.moveTo(-3.4, -7.2); g.lineTo(3.4, -7.2); g.stroke();
+  } else {
+    // head
+    g.fillStyle = hurt ? '#ffb0a0' : '#f2c9a0';
+    g.beginPath(); g.arc(0, -11, 7, 0, Math.PI * 2); g.fill();
+
+    // facial hair / hair (varies the silhouette)
+    if (look.hair) {
+      g.fillStyle = look.hair;
+      g.beginPath();
+      g.moveTo(-7, -10);
+      g.quadraticCurveTo(-8, -19, 0, -19);
+      g.quadraticCurveTo(8, -19, 7, -10);
+      g.quadraticCurveTo(0, -14, -7, -10);
+      g.closePath(); g.fill();
+      g.fillRect(-8, -13, 2.4, 9); g.fillRect(5.6, -13, 2.4, 9); // side locks
+    } else if (look.bald) {
+      g.fillStyle = 'rgba(255,255,255,0.22)';
+      g.beginPath(); g.ellipse(-2, -13, 2.6, 1.5, 0, 0, Math.PI * 2); g.fill(); // shine
+    } else {
+      g.fillStyle = '#e9edf5'; // classic beard
+      g.beginPath(); g.moveTo(-6, -10); g.quadraticCurveTo(0, 1, 6, -10); g.closePath(); g.fill();
+    }
+
+    // eyes (look toward facing)
+    g.fillStyle = '#101418';
+    g.beginPath(); g.arc(-2.5 + face * 1.5, -12, 1.4, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(2.5 + face * 1.5, -12, 1.4, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(70,40,25,0.55)';
+    g.lineWidth = 0.8;
+    g.beginPath(); g.moveTo(-5 + face * 1.2, -14.5); g.lineTo(-1 + face * 1.2, -14.1); g.stroke();
+    g.beginPath(); g.moveTo(1 + face * 1.2, -14.1); g.lineTo(5 + face * 1.2, -14.5); g.stroke();
+  }
 
   if (hasHat) {
     // wide brim + bent cone hat
@@ -198,6 +254,20 @@ function drawWizardSprite(g, look, face, time, hurt, walk = 0) {
     g.fillStyle = '#241626';
     g.beginPath(); g.moveTo(-6, -15); g.lineTo(-10, -24); g.lineTo(-3, -17); g.closePath(); g.fill();
     g.beginPath(); g.moveTo(6, -15); g.lineTo(10, -24); g.lineTo(3, -17); g.closePath(); g.fill();
+  }
+
+  // robot antenna poking up through the hat (the disguise isn't perfect…)
+  if (look.robot) {
+    const tip = look.orb || '#ffd47a';
+    const blink = 0.5 + Math.sin(time * 8) * 0.5;
+    g.strokeStyle = '#6c7682'; g.lineWidth = 1.3; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(face * 3, -30); g.lineTo(face * 5, -41); g.stroke();
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.fillStyle = wizardAlpha(tip, 0.5 + blink * 0.5);
+    g.shadowColor = tip; g.shadowBlur = 5 + blink * 6;
+    g.beginPath(); g.arc(face * 5, -42, 1.8, 0, Math.PI * 2); g.fill();
+    g.restore();
   }
 
   // hand-cast wisp for staffless wizards

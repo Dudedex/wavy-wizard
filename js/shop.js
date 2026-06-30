@@ -722,16 +722,19 @@ function renderBuildSummary() {
 function renderShopMeter() {
   const el = document.getElementById('shop-meter');
   const entries = Object.entries(game.dmgMeter)
-    .filter(([, v]) => v > 0)
+    .filter(([id, v]) => v > 0 && SPELLS[id]) // skip non-spell sources (bomb pad, auras)
     .sort((a, b) => b[1] - a[1]);
   if (!entries.length) { el.style.display = 'none'; return; }
   el.style.display = 'block';
   const t = Math.max(1, game.waveTime);
   const total = entries.reduce((a, [, v]) => a + v, 0);
+  const max = entries[0][1];
   let html = `<h3>Wave ${game.wave} Damage — ${t.toFixed(0)}s</h3>`;
   for (const [id, v] of entries) {
     const def = SPELLS[id];
+    const barW = Math.max(2, Math.round((v / max) * 100));
     html += `<div class="meter-row" data-id="${id}">
+      <i class="mbar" style="width:${barW}%; background:${def.color}55; border-color:${def.color}aa"></i>
       <span class="mname">${def.icon} ${def.name}</span>
       <span class="mnums">${formatNum(v)} <em>${formatNum(v / t)}/s</em> <b>${Math.round((v / total) * 100)}%</b></span>
     </div>`;
