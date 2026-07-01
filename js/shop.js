@@ -18,6 +18,14 @@ function itemPrice(item) {
   return Math.round(item.price * (1 + game.wave * 0.06) + 0.22 * maxEarnableGold(game.wave));
 }
 
+// A representative shop-item price for the current wave. Gold rewards from shop
+// events are anchored to this so they keep pace with rising prices instead of
+// becoming worthless in later rounds. Tuned so the events match their original
+// wave-1 payouts: The Alchemist ≈ 30g, the Demon Contract ≈ 80g.
+function standardItemPrice() { return itemPrice({ price: 22 }); }
+function alchemistGold() { return Math.round(standardItemPrice() * 0.94); }
+function demonGold() { return Math.round(standardItemPrice() * 2.5); }
+
 function spellTierWeightForWave(wave) {
   // returns tier index 0..3 for a NEW spell offer
   const w = [10, 0, 0, 0];
@@ -147,10 +155,10 @@ const SHOP_EVENTS = {
   },
   alchemist: {
     icon: '⚗️', name: 'The Alchemist',
-    desc: () => 'Transmute 5 max HP into 30 gold.',
+    desc: () => `Transmute 5 max HP into ${alchemistGold()} gold.`,
     cost: () => 0, can: g => g.player.stats.maxHp > 20,
-    label: () => 'Transmute — 5 HP → 30g',
-    act: g => { g.player.stats.maxHp -= 5; g.player.hp = Math.min(g.player.hp, g.player.stats.maxHp); g.gold += 30; },
+    label: () => `Transmute — 5 HP → ${alchemistGold()}g`,
+    act: g => { const gold = alchemistGold(); g.player.stats.maxHp -= 5; g.player.hp = Math.min(g.player.hp, g.player.stats.maxHp); g.gold += gold; g.goldEarned += gold; },
   },
   black: {
     icon: '🕯️', name: 'Black Market',
@@ -164,10 +172,10 @@ const SHOP_EVENTS = {
   // --- "Build debt": power now, a delayed cost next wave ---
   demon: {
     icon: '😈', name: 'Demon Contract', debt: true,
-    desc: () => 'Gain 80 gold now. The price: every enemy has +10% HP next wave.',
+    desc: () => `Gain ${demonGold()} gold now. The price: every enemy has +10% HP next wave.`,
     cost: () => 0, can: () => true,
-    label: () => 'Sign in blood — +80g',
-    act: g => { g.gold += 80; g.goldEarned += 80; g.debtHpMult = 1.1; addText(g.player.x, g.player.y - 40, 'The contract is sealed…', '#ff5577', 17); },
+    label: () => `Sign in blood — +${demonGold()}g`,
+    act: g => { const gold = demonGold(); g.gold += gold; g.goldEarned += gold; g.debtHpMult = 1.1; addText(g.player.x, g.player.y - 40, 'The contract is sealed…', '#ff5577', 17); },
   },
   cursed: {
     icon: '🩸', name: 'Cursed Discount', debt: true,

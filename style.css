@@ -737,6 +737,15 @@ h2.gold { color: #ffd454; text-shadow: 0 0 24px rgba(255, 200, 60, 0.5); }
 .ach-toast-row { font-size: 13px; color: #eaf2ff; }
 .ach-toast-row .ach-ico { font-size: 16px; }
 
+/* Keyboard navigation: clear focus ring on shop controls */
+#shop button:focus { outline: none; }
+#shop button:focus-visible,
+#shop button:focus {
+  outline: 3px solid #8be0ff;
+  outline-offset: 2px;
+  box-shadow: 0 0 12px rgba(139, 224, 255, 0.55);
+}
+
 /* ---------- live achievement pop-ups (bottom-right) ---------- */
 #ach-toasts {
   position: fixed; right: 16px; bottom: 16px; z-index: 4000;

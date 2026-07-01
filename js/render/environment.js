@@ -353,10 +353,14 @@ function drawBackground() {
   // realm-flavoured decoration (embers, snow, dust, grass, …)
   drawRealmDecor(th);
 
-  // walls
-  ctx.strokeStyle = th.wall;
-  ctx.lineWidth = 4;
-  ctx.strokeRect(WALL, WALL, W - WALL * 2, H - WALL * 2);
+  // walls — high-contrast white-on-black border so the impassable edge reads
+  // clearly on every theme (concentric strokes: black outer, white core, thin
+  // themed accent).
+  const rw = W - WALL * 2, rh = H - WALL * 2;
+  ctx.lineJoin = 'miter';
+  ctx.strokeStyle = 'rgba(6,8,16,0.95)';       ctx.lineWidth = 9;   ctx.strokeRect(WALL, WALL, rw, rh);
+  ctx.strokeStyle = 'rgba(240,246,255,0.95)';  ctx.lineWidth = 4;   ctx.strokeRect(WALL, WALL, rw, rh);
+  ctx.strokeStyle = th.wall;                   ctx.lineWidth = 1.5; ctx.strokeRect(WALL, WALL, rw, rh);
 }
 
 // Draws an element landmark on the ground + a proximity ring (brighter when active).

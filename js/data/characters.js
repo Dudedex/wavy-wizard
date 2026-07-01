@@ -106,7 +106,8 @@ const CHARACTERS = [
   {
     id: 'wizgeneer', name: 'Gizmo', title: 'the Wizgeneer',
     look: { robe: '#4a6a2d', hat: '#33491e', orb: '#ffd47a', trim: '#d7ff8a', hasHat: true, hasStaff: true, robot: true },
-    perks: ['Spell damage powers your items, and item strength powers your spells', 'Both conversions are reduced by 40%', 'Build turrets & gadgets, or buff them — either path feeds the other'],
+    perks: ['Always starts with 🛠️ Turret Builder (plus a second spell you pick)', 'Spell damage powers your items, and item strength powers your spells', 'Both conversions are reduced by 40%'],
+    alwaysSpell: 'builder', // guaranteed starting spell, in addition to the selected one
     apply: s => { s.wizgeneer = true; },
   },
   {

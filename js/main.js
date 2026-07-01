@@ -25,6 +25,15 @@ window.addEventListener('resize', updateUiScale);
 updateUiScale();
 const WALL = 26; // arena wall thickness
 const PROJ_SPEED_MULT = 1.05; // global +5% to player projectile travel speed
+const MAX_ENEMY_PROJECTILES = 500; // perf cap: no NEW shots spawn past this (live ones are kept)
+
+// Spawn an enemy projectile, but refuse to add one once the arena is already at
+// the cap — existing shots are never destroyed, we just stop making more.
+function fireEnemyProjectile(obj) {
+  if (game.enemyProjectiles.length >= MAX_ENEMY_PROJECTILES) return null;
+  game.enemyProjectiles.push(obj);
+  return obj;
+}
 
 // ---------------------------------------------------------------------------
 // Utils
@@ -77,6 +86,29 @@ function keyLabel(code) {
   return code.slice(0, 4).toUpperCase();
 }
 
+// ---------------------------------------------------------------------------
+// Keyboard navigation for the shop: Arrows/Tab move focus across the visible,
+// enabled controls (offers, reroll, next-wave, sell/fuse…); Enter/Space acts.
+// ---------------------------------------------------------------------------
+const SHOP_NAV_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter', 'NumpadEnter', 'Space'];
+function shopButtons() {
+  return [...document.querySelectorAll('#shop button')].filter(b => b.offsetParent !== null && !b.disabled);
+}
+function handleShopKeys(e) {
+  const btns = shopButtons();
+  if (!btns.length) return;
+  const idx = btns.indexOf(document.activeElement);
+  if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') {
+    e.preventDefault();
+    (idx >= 0 ? btns[idx] : btns[0]).click(); // re-focus is handled by the re-render / next keypress
+    return;
+  }
+  const dir = (e.code === 'ArrowRight' || e.code === 'ArrowDown' || (e.code === 'Tab' && !e.shiftKey)) ? 1 : -1;
+  e.preventDefault();
+  const start = idx < 0 ? (dir > 0 ? -1 : 0) : idx;
+  btns[(start + dir + btns.length) % btns.length].focus();
+}
+
 window.addEventListener('keydown', e => {
   if (rebindSlot !== null) {
     e.preventDefault();
@@ -90,15 +122,14 @@ window.addEventListener('keydown', e => {
     return;
   }
   keys[e.code] = true;
+  // Shop: let the keyboard drive the menu (arrows/Tab move, Enter/Space activates).
+  if (game.state === 'shop' && SHOP_NAV_KEYS.includes(e.code)) { handleShopKeys(e); return; }
   if (e.code === 'KeyM') { muted = !muted; game.opt.muted = muted; saveOpts(); updateSoundtrack(); addText(game.player.x, game.player.y - 40, muted ? 'MUTED' : 'SOUND ON', '#9fb0c8', 14); }
   if (e.code === 'Tab') { game.showMeter = !game.showMeter; e.preventDefault(); }
   if (e.code === 'KeyP') togglePause();
-  if (e.code === 'Escape') {
-    const inFs = document.fullscreenElement || document.webkitFullscreenElement;
-    if (game.state === 'playing') togglePause();           // 1st hit: pause the game
-    else if (game.state === 'paused' && inFs) toggleFullscreen(); // while paused in FS: quit fullscreen
-    else if (game.state === 'paused') togglePause();        // not in FS: resume
-  }
+  // Esc is a simple pause/resume toggle. (In fullscreen the browser also exits
+  // fullscreen on Esc — that's browser-enforced and can't be prevented.)
+  if (e.code === 'Escape' && (game.state === 'playing' || game.state === 'paused')) togglePause();
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -279,10 +310,25 @@ function randomizeRandoSpells() {
   p.spells = ids.map(id => ({ id, tier: Math.min(3, game.masteryLvl[id] || 0), t: 0, auto: true }));
 }
 
+// Guarantees a character's `alwaysSpell` (e.g. the Wizgeneer's Turret Builder)
+// is present in a spellbook, prepending it if missing. Used at both run start
+// and on resume so the guaranteed spell can never go absent.
+function ensureAlwaysSpell(spells, charDef) {
+  if (!charDef || !charDef.alwaysSpell) return spells;
+  if (!spells.some(s => s.id === charDef.alwaysSpell)) {
+    spells.unshift({ id: charDef.alwaysSpell, tier: 0, t: 0, auto: true });
+  }
+  return spells;
+}
+
 function freshPlayer(charDef, starterSpell) {
   charDef = charDef || CHARACTERS[0];
   const stats = freshStats();
   charDef.apply(stats);
+  // A character may always begin with a guaranteed spell (e.g. the Wizgeneer's
+  // Turret Builder) in addition to the spell the player selected.
+  const spells = [{ id: starterSpell || 'missile', tier: 0, t: 0, auto: true }];
+  ensureAlwaysSpell(spells, charDef);
   return {
     x: W / 2, y: H / 2, r: 16,
     hp: stats.maxHp, shield: 0, shieldCap: 0,
@@ -290,7 +336,7 @@ function freshPlayer(charDef, starterSpell) {
     look: charDef.look,
     charName: charDef.name,
     charId: charDef.id,
-    spells: [{ id: starterSpell || 'missile', tier: 0, t: 0, auto: true }],
+    spells,
     orbAngle: 0,
     stormCharge: 0, echoCount: 0, // Storm Battery charges / Echo Lens cadence
     invuln: 0, hurtFlash: 0,
@@ -1665,7 +1711,7 @@ function updateProjectiles(dt) {
           if (e.reflect > 0 && !pr.reflected) {
             const a = Math.atan2(p.y - pr.y, p.x - pr.x);
             const spd = Math.max(220, Math.hypot(pr.vx, pr.vy));
-            game.enemyProjectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, dmg: pr.dmg, r: pr.r + 1, life: 4, color: '#cfe2ff' });
+            fireEnemyProjectile({ x: e.x, y: e.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, dmg: pr.dmg, r: pr.r + 1, life: 4, color: '#cfe2ff' });
             burst(e.x, e.y, '#cfe2ff', 6, 120, 0.3);
             done = true; break;
           }
@@ -2956,6 +3002,7 @@ function resumeRun() {
   const p = game.player;
   Object.assign(p.stats, d.stats);
   p.spells = d.spells.map(s => ({ id: s.id, tier: s.tier, t: 0, auto: s.auto !== false, enchant: s.enchant || undefined, variant: s.variant || undefined, fuseBonus: s.fuseBonus || 0 }));
+  ensureAlwaysSpell(p.spells, selectedChar); // never resume without the guaranteed spell
   for (const id of d.procItems || []) addProcItem(id);
   p.items = Array.isArray(d.items) ? d.items : [];
   p.lastResort = d.lastResort !== false;
@@ -3713,6 +3760,14 @@ function showCharSelect() {
 
 function showSpellSelect() {
   setState('spellselect');
+  // Characters with a guaranteed starting spell pick a *second* spell here.
+  const sub = document.querySelector('#spellselect .subtitle');
+  if (sub) {
+    const always = selectedChar && selectedChar.alwaysSpell ? SPELLS[selectedChar.alwaysSpell] : null;
+    sub.innerHTML = always
+      ? `You always start with ${always.icon} <b>${always.name}</b> — pick a <b>second</b> spell to begin with.`
+      : "Free, at Tier I. The rest you'll buy with blood and gold.";
+  }
   const row = document.getElementById('spell-cards');
   row.innerHTML = '';
   for (const [id, def] of Object.entries(SPELLS)) {
@@ -4279,6 +4334,30 @@ function drawSpellProjectileAsset(g, pr, time) {
   g.restore();
 }
 
+// Soft elliptical ground shadow planted under a character/enemy. Drawn in world
+// coords beneath the body so figures feel grounded rather than floating.
+function drawGroundShadow(x, y, rx, ry, alpha) {
+  if (game.opt && game.opt.lowFx) { // cheap flat ellipse when low-FX is on
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.fillStyle = '#000';
+    ctx.translate(x, y); ctx.scale(1, ry / rx);
+    ctx.beginPath(); ctx.arc(0, 0, rx, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    return;
+  }
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, ry / rx);
+  const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+  grad.addColorStop(0, `rgba(0,0,0,${alpha})`);
+  grad.addColorStop(0.72, `rgba(0,0,0,${alpha * 0.74})`); // hold the dark core wider so it reads past the body
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(0, 0, rx, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
 // Shared look for friendly/positive effect zones: light-purple fill + thick
 // blue dotted border (distinct from hostile red-dashed danger zones).
 function drawFriendlyZone(x, y, r, fillA, strokeA) {
@@ -4591,12 +4670,12 @@ function render() {
     const fade = w.t > w.dur - 0.6 ? (w.dur - w.t) / 0.6 : 1;
     ctx.fillStyle = `rgba(143, 168, 255, ${0.16 * fade})`;
     ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2); ctx.fill();
-    // thick black border so the impassable edge reads clearly (like the map wall)
-    ctx.lineWidth = 5; ctx.strokeStyle = `rgba(7, 9, 18, ${0.92 * fade})`;
+    // high-contrast white-on-black border so the impassable edge reads clearly
+    // (matches the map wall): thick black outer, white core.
+    ctx.lineWidth = 6; ctx.strokeStyle = `rgba(6, 8, 16, ${0.95 * fade})`;
     ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2); ctx.stroke();
-    // a thin blue rim just inside the black border
-    ctx.lineWidth = 2; ctx.strokeStyle = `rgba(170, 195, 255, ${0.7 * fade})`;
-    ctx.beginPath(); ctx.arc(w.x, w.y, w.r - 3, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = `rgba(240, 246, 255, ${0.92 * fade})`;
+    ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2); ctx.stroke();
     // hatch marks for a "solid wall" read
     ctx.globalAlpha = fade;
     ctx.fillStyle = '#aac3ff';
@@ -4674,6 +4753,7 @@ function render() {
   // enemies
   for (const e of game.enemies) {
     const wob = Math.sin(e.wobble) * 0.08 + 1;
+    if (!e.dead) drawGroundShadow(e.x, e.y + e.r * 0.62, e.r * (e.boss ? 1.4 : 1.26), e.r * 0.6, 0.34);
     if (e.bloodhungry) {
       const pulse = 0.5 + Math.sin(performance.now() / 120 + e.wobble) * 0.5;
       const auraR = e.r + 10 + pulse * 5;
@@ -4747,6 +4827,7 @@ function render() {
   // players — both bodies in co-op
   if (game.state !== 'gameover') for (const p of allBodies()) {
     if (p.downed) { drawDownedBody(p); continue; }
+    drawGroundShadow(p.x, p.y + 18, p.r * 1.05, p.r * 0.5, 0.34); // planted under the wizard
     ctx.save();
     ctx.translate(p.x, p.y);
     // Invincible (Aegis) pad: a blinking golden aura around the wizard
@@ -4852,16 +4933,29 @@ function render() {
   // player spell projectiles — animated spell assets with tails, cores, and tier halos
   const spellNow = performance.now() / 1000;
   for (const pr of game.projectiles) drawSpellProjectileAsset(ctx, pr, spellNow);
-  for (const pr of game.enemyProjectiles) {
-    // damaging projectiles always read red so threats are unmistakable
+  // enemy projectiles — batched into a few draw calls with NO per-shot shadowBlur
+  // (a blur per projectile is the main FPS sink when the arena fills with shots).
+  // A single translucent halo pass fakes the glow far more cheaply.
+  if (game.enemyProjectiles.length) {
+    const eps = game.enemyProjectiles;
     const hc = game.opt.hiContrast;
-    const rr = hc ? pr.r + 2 : pr.r;
-    if (hc) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; }
-    ctx.fillStyle = '#ff3344';
-    ctx.shadowColor = '#ff3344'; ctx.shadowBlur = 8;
-    ctx.beginPath(); ctx.arc(pr.x, pr.y, rr, 0, Math.PI * 2); ctx.fill();
-    if (hc) ctx.stroke();
-    ctx.shadowBlur = 0;
+    const TAU = Math.PI * 2;
+    if (!game.opt.lowFx) { // cheap batched glow instead of shadowBlur
+      ctx.fillStyle = 'rgba(255,51,68,0.22)';
+      ctx.beginPath();
+      for (const pr of eps) { const gr = pr.r + 4; ctx.moveTo(pr.x + gr, pr.y); ctx.arc(pr.x, pr.y, gr, 0, TAU); }
+      ctx.fill();
+    }
+    ctx.fillStyle = '#ff3344'; // solid cores, one fill for all
+    ctx.beginPath();
+    for (const pr of eps) { const rr = hc ? pr.r + 2 : pr.r; ctx.moveTo(pr.x + rr, pr.y); ctx.arc(pr.x, pr.y, rr, 0, TAU); }
+    ctx.fill();
+    if (hc) { // hi-contrast white outline, one stroke for all
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (const pr of eps) { const rr = pr.r + 2; ctx.moveTo(pr.x + rr, pr.y); ctx.arc(pr.x, pr.y, rr, 0, TAU); }
+      ctx.stroke();
+    }
   }
   for (const l of game.enemyLasers) {
     const a = 1 - l.t / l.dur;
@@ -4988,13 +5082,16 @@ function render() {
   // top of friendly/status areas such as poison, meteor, breath, and nova FX.
   drawTopDangerOutlines();
 
-  // particles
+  // particles — hoist constant state out of the loop; skip the per-particle
+  // outline stroke under low-FX (halves the path work when many are on screen).
+  const partOutline = !game.opt.lowFx;
+  ctx.fillStyle = '#ff3344';
+  ctx.strokeStyle = '#05060a';
+  ctx.lineWidth = 1.25;
   for (const pt of game.particles) {
     ctx.globalAlpha = 1 - pt.t / pt.dur;
-    ctx.fillStyle = '#ff3344';
-    ctx.strokeStyle = '#05060a';
-    ctx.lineWidth = 1.25;
-    ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2); ctx.fill();
+    if (partOutline) ctx.stroke();
   }
   ctx.globalAlpha = 1;
 

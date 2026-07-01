@@ -337,7 +337,7 @@ function startEnemyAbility(e, p, d) {
           const a0 = Math.atan2(p.y - e.y, p.x - e.x);
           for (let i = -3; i <= 3; i++) {
             const a = a0 + i * 0.16;
-            game.enemyProjectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, dmg: e.dmg * 0.7, r: 7, life: 5, color: '#cc88ff', boss: true });
+            fireEnemyProjectile({ x: e.x, y: e.y, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, dmg: e.dmg * 0.7, r: 7, life: 5, color: '#cc88ff', boss: true });
           }
           addText(e.x, e.y - e.r - 20, 'ARCANE FAN', '#cc88ff', 14);
         } else {
@@ -375,7 +375,7 @@ function startEnemyAbility(e, p, d) {
           const count = phase >= 2 ? 5 : 3;
           for (let i = 0; i < count; i++) {
             const a = (Math.PI * 2 * i) / count;
-            game.enemyProjectiles.push({
+            fireEnemyProjectile({
               x: e.x + Math.cos(a) * 34, y: e.y + Math.sin(a) * 34,
               vx: Math.cos(a) * 120, vy: Math.sin(a) * 120,
               dmg: Math.round(e.dmg * 0.6), r: 9, life: 6, color: '#ff88dd', homing: 2.6, boss: true,
@@ -442,7 +442,7 @@ function startEnemyAbility(e, p, d) {
     case 'nuller': { // no longer silences — just lobs an arcane bolt at the player
       const a = Math.atan2(p.y - e.y, p.x - e.x);
       const spd = 240;
-      game.enemyProjectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, dmg: e.dmg, r: 7, life: 4, color: '#b08aff' });
+      fireEnemyProjectile({ x: e.x, y: e.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, dmg: e.dmg, r: 7, life: 4, color: '#b08aff' });
       e.abilityT = rand(3, 5);
       break;
     }
@@ -475,7 +475,7 @@ function triggerEnemyAbility(e, p, d) {
     const n = 8;
     for (let i = 0; i < n; i++) {
       const a = (Math.PI * 2 * i) / n + rand(-0.05, 0.05);
-      game.enemyProjectiles.push({
+      fireEnemyProjectile({
         x: e.x, y: e.y, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130,
         dmg: e.dmg * 0.8, r: 6, life: 6, color: '#ff5577', boss: !!e.boss,
       });
@@ -586,7 +586,7 @@ function updateEnemies(dt) {
         e.spiral.ang += 0.42;
         for (let k = 0; k < 3; k++) {
           const a = e.spiral.ang + k * (Math.PI * 2 / 3);
-          game.enemyProjectiles.push({
+          fireEnemyProjectile({
             x: e.x, y: e.y, vx: Math.cos(a) * 175, vy: Math.sin(a) * 175,
             dmg: Math.round(e.dmg * 0.5), r: 6, life: 5, color: '#cc88ff', boss: !!e.boss,
           });
@@ -684,7 +684,7 @@ function updateEnemies(dt) {
           const n = 14;
           for (let i = 0; i < n; i++) {
             const a = (Math.PI * 2 * i) / n + rand(-0.1, 0.1);
-            game.enemyProjectiles.push({
+            fireEnemyProjectile({
               x: e.x, y: e.y, vx: Math.cos(a) * e.ranged.projSpd, vy: Math.sin(a) * e.ranged.projSpd,
               dmg: e.ranged.dmg, r: 7, life: 5, color: '#cc88ff', boss: true,
             });
@@ -695,7 +695,7 @@ function updateEnemies(dt) {
           // veteran spitters fire a three-shot spread
           const spread = game.wave >= 8 ? [-0.34, 0, 0.34] : [-0.18, 0, 0.18];
           for (const off of spread) {
-            game.enemyProjectiles.push({
+            fireEnemyProjectile({
               x: e.x, y: e.y, vx: Math.cos(a + off) * e.ranged.projSpd, vy: Math.sin(a + off) * e.ranged.projSpd,
               dmg: e.ranged.dmg, r: 5, life: 4, color: '#ffe96b', boss: !!e.boss,
             });
